@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -61,13 +60,6 @@
       margin-bottom: 8px;
       font-weight: bold;
     }
-    .form-row {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: center;
-      margin-bottom: 8px;
-    }
     .goal-inputs {
       display: flex;
       gap: 8px;
@@ -91,6 +83,9 @@
       background: #c3e6cb;
       border-color: #28a745;
     }
+    input.over {
+      background: #e0e0e0;
+    }
     .doubling-section {
       display: flex;
       gap: 8px;
@@ -110,6 +105,9 @@
     select.has-prediction {
       background: #c3e6cb;
       border-color: #28a745;
+    }
+    select.over {
+      background: #e0e0e0;
     }
     button {
       padding: 8px 14px;
@@ -282,11 +280,15 @@
         console.log("User predictions:", userPreds.length);
         
         userPreds.forEach(pred => {
-          userPredictions[pred.MatchID] = {
-            homePred: pred.HomePred,
-            awayPred: pred.AwayPred,
-            doubling: pred.Doubling
-          };
+          // Only store predictions for LIVE matches
+          const match = matchesData.find(m => m.MatchID === pred.MatchID);
+          if (match && getMatchStatus(match) !== "Over") {
+            userPredictions[pred.MatchID] = {
+              homePred: pred.HomePred,
+              awayPred: pred.AwayPred,
+              doubling: pred.Doubling
+            };
+          }
         });
       } catch (error) {
         console.error("Error fetching user predictions:", error);
@@ -315,32 +317,33 @@
       };
 
       try {
-        // STEP 1: Check if prediction already exists for this player+match
+        // STEP 1: Get all existing predictions
         const response = await fetch(SHEETDB_PREDICTIONS_URL);
         const allPredictions = await response.json();
         
-        const existingPrediction = allPredictions.find(
+        // STEP 2: Find existing prediction for this player+match
+        const existingIndex = allPredictions.findIndex(
           pred => pred.PlayerName === playerName && pred.MatchID === matchId
         );
 
-        console.log("Existing prediction:", existingPrediction);
+        console.log("Existing prediction index:", existingIndex);
 
-        // STEP 2: If exists, delete it first (to prevent duplicates)
-        if (existingPrediction) {
-          console.log("Deleting existing prediction before updating...");
+        // STEP 3: If exists, delete it
+        if (existingIndex !== -1) {
+          console.log("Deleting existing prediction at index:", existingIndex);
           
-          // SheetDB DELETE endpoint: delete by row index
-          const deleteUrl = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions&index=${existingPrediction.index}`;
+          const deleteUrl = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions&index=${existingIndex}`;
           
-          try {
-            await fetch(deleteUrl, { method: "DELETE" });
-            console.log("Existing prediction deleted");
-          } catch (deleteError) {
-            console.error("Error deleting existing prediction:", deleteError);
+          const deleteResponse = await fetch(deleteUrl, { method: "DELETE" });
+          
+          if (deleteResponse.ok) {
+            console.log("✓ Existing prediction deleted");
+          } else {
+            console.error("✗ Failed to delete existing prediction:", deleteResponse.status);
           }
         }
 
-        // STEP 3: Add new prediction (this will be the only row now)
+        // STEP 4: Add new prediction
         const postResponse = await fetch(SHEETDB_PREDICTIONS_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -348,7 +351,7 @@
         });
 
         const ok = postResponse.ok;
-        console.log("Prediction saved:", ok);
+        console.log("New prediction saved:", ok);
         return ok;
       } catch (error) {
         console.error("Error saving prediction:", error);
@@ -414,15 +417,14 @@
         }
 
         // Show existing prediction ONLY if match is Live
-        let existingMsg = null;
         if (existingPred && matchStatus !== "Over") {
-          existingMsg = document.createElement("div");
+          const existingMsg = document.createElement("div");
           existingMsg.className = "existing-prediction";
           existingMsg.textContent = `📋 Your current prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}`;
           div.appendChild(existingMsg);
         }
 
-        // Home/Away Goals section
+        // Create inputs
         const goalsDiv = document.createElement("div");
         const goalsLabel = document.createElement("div");
         goalsLabel.className = "prediction-label";
@@ -500,15 +502,20 @@
         doublingDiv.appendChild(doublingLabel);
         doublingDiv.appendChild(doublingSection);
 
-        // Submit button - FIXED: Check match status FIRST
+        // Submit button - CRITICAL: Check matchStatus FIRST
         const submitBtn = document.createElement("button");
-        
+        submitBtn.id = `btn-${m.MatchID}`;
+
+        // FIRST PRIORITY: If Over, DISABLE IMMEDIATELY
         if (matchStatus === "Over") {
           submitBtn.textContent = "Match Over";
           submitBtn.disabled = true;
           homeInput.disabled = true;
           awayInput.disabled = true;
           doublingSelect.disabled = true;
+          homeInput.classList.add("over");
+          awayInput.classList.add("over");
+          doublingSelect.classList.add("over");
         } else if (isCutoff) {
           submitBtn.textContent = "Closed";
           submitBtn.disabled = true;
@@ -516,15 +523,20 @@
           awayInput.disabled = true;
           doublingSelect.disabled = true;
         } else {
+          // Live match - enable button
           submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
         }
-        
-        submitBtn.id = `btn-${m.MatchID}`;
 
         submitBtn.onclick = async () => {
           const homePred = homeInput.value;
           const awayPred = awayInput.value;
           const doubling = doublingSelect.value;
+
+          // Double-check: match must be Live
+          if (matchStatus === "Over") {
+            alert("⚠️ This match is Over. You cannot submit or update predictions.");
+            return;
+          }
 
           if (!homePred || !awayPred) {
             alert("Please enter both home and away goals.");
@@ -568,7 +580,6 @@
         div.appendChild(header);
         div.appendChild(info);
         div.appendChild(statusDiv);
-        if (existingMsg) div.appendChild(existingMsg);
         div.appendChild(goalsDiv);
         div.appendChild(doublingDiv);
         div.appendChild(submitBtn);
