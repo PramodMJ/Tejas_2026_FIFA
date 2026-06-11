@@ -201,7 +201,7 @@
 
   <script>
     // CONFIG: Replace with your SheetDB API key
-    const SHEETDB_API_KEY = "YOUR_ACTUAL_KEY_HERE";
+    const SHEETDB_API_KEY = "nx22x6vlrq690";
     const SHEETDB_MATCHES_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Matches`;
     const SHEETDB_PREDICTIONS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions`;
     const SHEETDB_PLAYERS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Players`;
@@ -218,7 +218,7 @@
       const istOffset = 5.5 * 60 * 60000;
       const istTime = new Date(utc + istOffset);
       const hour = istTime.getHours();
-      return hour >= 20 || hour < 0;
+      return hour >= 21 || hour < 0;
     }
 
     // Get match status from the sheet (Live or Over)
