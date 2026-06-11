@@ -150,10 +150,11 @@
       font-size: 13px;
       margin-top: 8px;
     }
-    .no-predictions {
-      color: #666;
-      font-size: 13px;
-      margin-top: 8px;
+    .loading-predictions {
+      text-align: center;
+      color: #007bff;
+      padding: 12px;
+      font-size: 14px;
     }
   </style>
 </head>
@@ -190,7 +191,7 @@
 
   <script>
     // CONFIG: Replace with your SheetDB API key
-    const SHEETDB_API_KEY = "nx22x6vlrq690";
+    const SHEETDB_API_KEY = "YOUR_ACTUAL_KEY_HERE";
     const SHEETDB_MATCHES_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Matches`;
     const SHEETDB_PREDICTIONS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions`;
     const SHEETDB_PLAYERS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Players`;
@@ -198,7 +199,7 @@
     let playerName = "";
     let matchesData = [];
     let playersData = [];
-    let userPredictions = {};  // Store user's predictions: { "M1": {home: "2", away: "1", doubling: "Yes"} }
+    let userPredictions = {};
 
     // Check if current time is between 8PM and 12AM IST
     function isCutoffTime() {
@@ -206,7 +207,6 @@
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
       const istOffset = 5.5 * 60 * 60000;
       const istTime = new Date(utc + istOffset);
-      
       const hour = istTime.getHours();
       return hour >= 20 || hour < 0;
     }
@@ -241,7 +241,7 @@
           });
         }
       } catch (error) {
-        console.error(error);
+        console.error("Error fetching players:", error);
       }
     }
 
@@ -250,38 +250,47 @@
       try {
         const response = await fetch(SHEETDB_MATCHES_URL);
         matchesData = await response.json();
+        console.log("Matches loaded:", matchesData.length);
       } catch (error) {
-        console.error(error);
+        console.error("Error fetching matches:", error);
       }
     }
 
     // Fetch user's existing predictions
     async function fetchUserPredictions() {
       userPredictions = {};
+      console.log("Fetching predictions for:", playerName);
+      
       try {
         const response = await fetch(SHEETDB_PREDICTIONS_URL);
         const allPredictions = await response.json();
+        console.log("All predictions:", allPredictions.length);
         
         // Filter predictions for this user
-        allPredictions.forEach(pred => {
-          if (pred.PlayerName === playerName) {
-            userPredictions[pred.MatchID] = {
-              homePred: pred.HomePred,
-              awayPred: pred.AwayPred,
-              doubling: pred.Doubling
-            };
-          }
+        const userPreds = allPredictions.filter(pred => pred.PlayerName === playerName);
+        console.log("User predictions:", userPreds.length);
+        
+        userPreds.forEach(pred => {
+          userPredictions[pred.MatchID] = {
+            homePred: pred.HomePred,
+            awayPred: pred.AwayPred,
+            doubling: pred.Doubling
+          };
+          console.log(`Loaded prediction for ${pred.MatchID}:`, userPredictions[pred.MatchID]);
         });
       } catch (error) {
-        console.error("Error fetching predictions:", error);
+        console.error("Error fetching user predictions:", error);
+        alert("⚠️ Warning: Could not load your existing predictions. You can still submit new predictions.");
       }
     }
 
     // Initialize app
     async function initializeApp() {
+      console.log("Initializing app...");
       await fetchPlayers();
       await fetchMatches();
       document.getElementById("loading").style.display = "none";
+      console.log("App initialized");
     }
 
     // Save/update prediction to Google Sheet
@@ -302,9 +311,11 @@
           body: JSON.stringify(payload)
         });
 
-        return response.ok;
+        const ok = response.ok;
+        console.log("Prediction saved:", ok);
+        return ok;
       } catch (error) {
-        console.error(error);
+        console.error("Error saving prediction:", error);
         return false;
       }
     }
@@ -328,6 +339,8 @@
       } else {
         document.getElementById("cutoffNotice").style.display = "none";
       }
+
+      console.log("Rendering matches. Total:", matchesData.length, "User predictions:", Object.keys(userPredictions).length);
 
       matchesData.forEach(m => {
         const status = getMatchStatus(m);
@@ -367,8 +380,9 @@
         }
 
         // Show existing prediction if exists
+        let existingMsg = null;
         if (existingPred) {
-          const existingMsg = document.createElement("div");
+          existingMsg = document.createElement("div");
           existingMsg.className = "existing-prediction";
           existingMsg.textContent = `📋 Your current prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}`;
           div.appendChild(existingMsg);
@@ -392,7 +406,6 @@
         homeInput.id = `home-${m.MatchID}`;
         homeInput.min = 0;
         
-        // Pre-fill if existing prediction
         if (existingPred) {
           homeInput.value = existingPred.homePred;
           homeInput.classList.add("has-prediction");
@@ -407,7 +420,6 @@
         awayInput.id = `away-${m.MatchID}`;
         awayInput.min = 0;
         
-        // Pre-fill if existing prediction
         if (existingPred) {
           awayInput.value = existingPred.awayPred;
           awayInput.classList.add("has-prediction");
@@ -444,7 +456,6 @@
         doublingSelect.appendChild(optionNo);
         doublingSelect.appendChild(optionYes);
         
-        // Pre-select if existing prediction
         if (existingPred && existingPred.doubling) {
           doublingSelect.value = existingPred.doubling;
           doublingSelect.classList.add("has-prediction");
@@ -460,7 +471,6 @@
         submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
         submitBtn.id = `btn-${m.MatchID}`;
 
-        // Disable if: Played OR cutoff time
         if (status === "Played" || isCutoff) {
           homeInput.disabled = true;
           awayInput.disabled = true;
@@ -485,7 +495,6 @@
           const success = await savePrediction(m.MatchID, homePred, awayPred, doubling);
 
           if (success) {
-            // Update userPredictions cache
             userPredictions[m.MatchID] = {
               homePred: homePred,
               awayPred: awayPred,
@@ -502,7 +511,6 @@
             doublingSelect.disabled = true;
             submitBtn.textContent = "Saved";
             
-            // Change class to show it's predicted
             div.classList.remove("match-cutoff");
             div.classList.add("match-predicted");
           } else {
@@ -518,13 +526,14 @@
         div.appendChild(header);
         div.appendChild(info);
         div.appendChild(statusDiv);
-        if (existingPred) div.appendChild(existingMsg);
         div.appendChild(goalsDiv);
         div.appendChild(doublingDiv);
         div.appendChild(submitBtn);
 
         container.appendChild(div);
       });
+
+      console.log("Matches rendered successfully");
     }
 
     document.getElementById("setPlayerBtn").onclick = async () => {
@@ -541,8 +550,18 @@
       playerName = name;
       document.getElementById("playerSection").style.display = "none";
       
+      // Show loading
+      const loadingDiv = document.createElement("div");
+      loadingDiv.id = "loadingPredictions";
+      loadingDiv.className = "loading-predictions";
+      loadingDiv.textContent = "Loading your existing predictions...";
+      document.getElementById("matchesSection").appendChild(loadingDiv);
+      
       // Fetch user's existing predictions
       await fetchUserPredictions();
+      
+      // Remove loading
+      loadingDiv.remove();
       
       renderMatches();
     };
@@ -553,6 +572,7 @@
       document.getElementById("userInfoSection").style.display = "none";
       document.getElementById("playerSection").style.display = "block";
       document.getElementById("matchesSection").innerHTML = "";
+      document.getElementById("playerError").style.display = "none";
     };
 
     // Initialize app on load
