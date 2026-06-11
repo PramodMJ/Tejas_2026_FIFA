@@ -332,7 +332,7 @@
         if (existingIndex !== -1) {
           console.log("Deleting existing prediction at index:", existingIndex);
           
-          const deleteUrl = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/Predictions`;
+          const deleteUrl = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions`;
           
           const deleteResponse = await fetch(deleteUrl, { 
             method: "DELETE", 
