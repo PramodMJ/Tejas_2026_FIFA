@@ -1,1 +1,621 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>FIFA World Cup Prediction Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; max-width: 600px; margin: 0 auto; }
+    h1 { margin: 0 0 16px; font-size: 22px; }
+    .match {
+      border: 1px solid #ccc;
+      margin: 10px 0;
+      padding: 12px;
+      border-radius: 8px;
+      background: #fff;
+    }
+    .match.over {
+      background: #f5f5f5;
+      opacity: 0.85;
+      border: 1px solid #999;
+    }
+    .match.live {
+      border: 1px solid #28a745;
+      background: #e8f5e9;
+    }
+    .match-cutoff {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+    }
+    .match-predicted {
+      background: #d4edda;
+      border: 1px solid #28a745;
+    }
+    .match-header {
+      font-weight: bold;
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+    .match-info {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    .match-status {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+    .status-live {
+      color: #28a745;
+      font-weight: bold;
+    }
+    .status-over {
+      color: #dc3545;
+      font-weight: bold;
+    }
+    .existing-prediction {
+      font-size: 12px;
+      color: #28a745;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    .form-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .goal-inputs {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .goal-inputs label {
+      font-size: 13px;
+      color: #555;
+    }
+    input {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 60px;
+      text-align: center;
+    }
+    input::placeholder {
+      text-align: center;
+    }
+    input.has-prediction {
+      background: #c3e6cb;
+      border-color: #28a745;
+    }
+    .doubling-section {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .doubling-section label {
+      font-size: 13px;
+      color: #555;
+    }
+    select {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      min-width: 120px;
+    }
+    select.has-prediction {
+      background: #c3e6cb;
+      border-color: #28a745;
+    }
+    button {
+      padding: 8px 14px;
+      border: none;
+      border-radius: 4px;
+      background: #007bff;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      width: 100%;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .error { color: #dc3545; margin-top: 8px; font-size: 13px; }
+    .success { color: #28a745; margin-top: 8px; font-size: 13px; }
+    .cutoff-note {
+      background: #fff3cd;
+      padding: 10px;
+      border-radius: 6px;
+      margin: 12px 0;
+      font-size: 13px;
+      color: #856404;
+    }
+    .player-section {
+      margin-bottom: 16px;
+    }
+    .player-section select {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+      width: 100%;
+      min-width: 250px;
+    }
+    #loading {
+      text-align: center;
+      color: #666;
+      padding: 20px;
+    }
+    .prediction-label {
+      font-size: 12px;
+      color: #777;
+      margin-bottom: 4px;
+    }
+    .no-players {
+      color: #dc3545;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+    .loading-predictions {
+      text-align: center;
+      color: #007bff;
+      padding: 12px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>FIFA World Cup Prediction Game</h1>
+
+  <!-- Cutoff notice -->
+  <div id="cutoffNotice" class="cutoff-note" style="display:none;">
+    ⚠️ Prediction submission is currently **closed** (8 PM - 12 AM IST).<br>
+    It will reopen at 12 AM midnight.
+  </div>
+
+  <!-- Player section -->
+  <div class="player-section" id="playerSection">
+    <label for="playerName" style="font-size: 14px; margin-bottom: 8px; display: block;">Select your name:</label>
+    <select id="playerName">
+      <option value="">-- Select your name --</option>
+    </select>
+    <div id="playerError" class="error" style="display: none;"></div>
+    <button id="setPlayerBtn" style="margin-top: 12px;">Start</button>
+  </div>
+
+  <!-- User info section -->
+  <div id="userInfoSection" style="display: none; margin-bottom: 16px;">
+    <div style="background: #e7f3ff; padding: 12px; border-radius: 6px;">
+      <strong>👤 Your name:</strong> <span id="displayPlayerName"></span>
+      <button id="backBtn" style="width: auto; padding: 6px 12px; margin-left: 12px; background: #6c757d;">Back</button>
+    </div>
+  </div>
+
+  <!-- Matches section -->
+  <div id="loading">Loading players and matches...</div>
+  <div id="matchesSection"></div>
+
+  <script>
+    // CONFIG: Replace with your SheetDB API key
+    const SHEETDB_API_KEY = "nx22x6vlrq690";
+    const SHEETDB_MATCHES_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Matches`;
+    const SHEETDB_PREDICTIONS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions`;
+    const SHEETDB_PLAYERS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Players`;
+
+    let playerName = "";
+    let matchesData = [];
+    let playersData = [];
+    let userPredictions = {};
+
+    // Check if current time is between 8PM and 12AM IST
+    function isCutoffTime() {
+      const now = new Date();
+      const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
+      const istOffset = 5.5 * 60 * 60000;
+      const istTime = new Date(utc + istOffset);
+      const hour = istTime.getHours();
+      return hour >= 22 || hour < 0;
+    }
+
+    // Get match status from the sheet (Live or Over)
+    function getMatchStatus(match) {
+      if (match.MatchStatus && match.MatchStatus.toLowerCase() === "over") {
+        return "Over";
+      }
+      return "Live";
+    }
+
+    // Fetch players from Google Sheet
+    async function fetchPlayers() {
+      try {
+        const response = await fetch(SHEETDB_PLAYERS_URL);
+        playersData = await response.json();
+        
+        const select = document.getElementById("playerName");
+        select.innerHTML = '<option value="">-- Select your name --</option>';
+        
+        if (playersData.length === 0) {
+          const errorDiv = document.createElement("div");
+          errorDiv.className = "no-players";
+          errorDiv.textContent = "⚠️ No players found. Please add player names to the 'Players' sheet.";
+          document.getElementById("playerSection").appendChild(errorDiv);
+        } else {
+          playersData.forEach(player => {
+            const option = document.createElement("option");
+            option.value = player.PlayerName;
+            option.textContent = player.PlayerName;
+            select.appendChild(option);
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching players:", error);
+      }
+    }
+
+    // Fetch matches from Google Sheet
+    async function fetchMatches() {
+      try {
+        const response = await fetch(SHEETDB_MATCHES_URL);
+        matchesData = await response.json();
+        console.log("Matches loaded:", matchesData.length);
+      } catch (error) {
+        console.error("Error fetching matches:", error);
+      }
+    }
+
+    // Fetch user's existing predictions
+    async function fetchUserPredictions() {
+      userPredictions = {};
+      console.log("Fetching predictions for:", playerName);
+      
+      try {
+        const response = await fetch(SHEETDB_PREDICTIONS_URL);
+        const allPredictions = await response.json();
+        console.log("All predictions:", allPredictions.length);
+        
+        const userPreds = allPredictions.filter(pred => pred.PlayerName === playerName);
+        console.log("User predictions:", userPreds.length);
+        
+        userPreds.forEach(pred => {
+          userPredictions[pred.MatchID] = {
+            homePred: pred.HomePred,
+            awayPred: pred.AwayPred,
+            doubling: pred.Doubling
+          };
+        });
+      } catch (error) {
+        console.error("Error fetching user predictions:", error);
+        alert("⚠️ Warning: Could not load your existing predictions. You can still submit new predictions.");
+      }
+    }
+
+    // Initialize app
+    async function initializeApp() {
+      console.log("Initializing app...");
+      await fetchPlayers();
+      await fetchMatches();
+      document.getElementById("loading").style.display = "none";
+      console.log("App initialized");
+    }
+
+    // Save/update prediction to Google Sheet (prevents duplicates)
+    async function savePrediction(matchId, homePred, awayPred, doubling) {
+      const payload = {
+        Timestamp: new Date().toISOString(),
+        PlayerName: playerName,
+        MatchID: matchId,
+        HomePred: homePred,
+        AwayPred: awayPred,
+        Doubling: doubling
+      };
+
+      try {
+        // STEP 1: Check if prediction already exists for this player+match
+        const response = await fetch(SHEETDB_PREDICTIONS_URL);
+        const allPredictions = await response.json();
+        
+        const existingPrediction = allPredictions.find(
+          pred => pred.PlayerName === playerName && pred.MatchID === matchId
+        );
+
+        console.log("Existing prediction:", existingPrediction);
+
+        // STEP 2: If exists, delete it first (to prevent duplicates)
+        if (existingPrediction) {
+          console.log("Deleting existing prediction before updating...");
+          
+          // SheetDB DELETE endpoint: delete by row index
+          const deleteUrl = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions&index=${existingPrediction.index}`;
+          
+          try {
+            await fetch(deleteUrl, { method: "DELETE" });
+            console.log("Existing prediction deleted");
+          } catch (deleteError) {
+            console.error("Error deleting existing prediction:", deleteError);
+          }
+        }
+
+        // STEP 3: Add new prediction (this will be the only row now)
+        const postResponse = await fetch(SHEETDB_PREDICTIONS_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const ok = postResponse.ok;
+        console.log("Prediction saved:", ok);
+        return ok;
+      } catch (error) {
+        console.error("Error saving prediction:", error);
+        return false;
+      }
+    }
+
+    function renderMatches() {
+      const container = document.getElementById("matchesSection");
+      container.innerHTML = "";
+
+      if (!playerName) {
+        container.innerHTML = "<p>Please select your name first.</p>";
+        return;
+      }
+
+      document.getElementById("userInfoSection").style.display = "block";
+      document.getElementById("displayPlayerName").textContent = playerName;
+
+      const isCutoff = isCutoffTime();
+      if (isCutoff) {
+        document.getElementById("cutoffNotice").style.display = "block";
+      } else {
+        document.getElementById("cutoffNotice").style.display = "none";
+      }
+
+      matchesData.forEach(m => {
+        const matchStatus = getMatchStatus(m);
+        const existingPred = userPredictions[m.MatchID];
+        
+        const div = document.createElement("div");
+        
+        let extraClass = "";
+        if (matchStatus === "Over") {
+          extraClass = "over";
+        } else if (existingPred) {
+          extraClass = "match-predicted";
+        } else if (m.MatchStatus && m.MatchStatus.toLowerCase() === "live") {
+          extraClass = "live";
+        } else if (isCutoff) {
+          extraClass = "match-cutoff";
+        }
+        
+        div.className = "match " + extraClass;
+
+        const header = document.createElement("div");
+        header.className = "match-header";
+        header.textContent = `${m.MatchID} | ${m.HomeTeam} vs ${m.AwayTeam}`;
+
+        const info = document.createElement("div");
+        info.className = "match-info";
+        info.textContent = m.Date;
+
+        const statusDiv = document.createElement("div");
+        statusDiv.className = "match-status";
+        
+        if (matchStatus === "Over") {
+          statusDiv.innerHTML = `<span class="status-over">⏹ Match Over</span> | Result: ${m.HomeGoalsReal || "-"} - ${m.AwayGoalsReal || "-"}`;
+        } else if (existingPred) {
+          statusDiv.innerHTML = `<span class="status-live">✓ Live</span> | You have a prediction`;
+        } else {
+          statusDiv.innerHTML = `<span class="status-live">✓ Live</span> | Open for predictions`;
+        }
+
+        // Show existing prediction ONLY if match is Live
+        let existingMsg = null;
+        if (existingPred && matchStatus !== "Over") {
+          existingMsg = document.createElement("div");
+          existingMsg.className = "existing-prediction";
+          existingMsg.textContent = `📋 Your current prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}`;
+          div.appendChild(existingMsg);
+        }
+
+        // Home/Away Goals section
+        const goalsDiv = document.createElement("div");
+        const goalsLabel = document.createElement("div");
+        goalsLabel.className = "prediction-label";
+        goalsLabel.textContent = "1) Predict Goals:";
+        
+        const goalInputs = document.createElement("div");
+        goalInputs.className = "goal-inputs";
+        
+        const homeLabel = document.createElement("label");
+        homeLabel.textContent = `${m.HomeTeam}:`;
+        
+        const homeInput = document.createElement("input");
+        homeInput.type = "number";
+        homeInput.placeholder = "?";
+        homeInput.id = `home-${m.MatchID}`;
+        homeInput.min = 0;
+        
+        if (existingPred && matchStatus !== "Over") {
+          homeInput.value = existingPred.homePred;
+          homeInput.classList.add("has-prediction");
+        }
+
+        const awayLabel = document.createElement("label");
+        awayLabel.textContent = `${m.AwayTeam}:`;
+        
+        const awayInput = document.createElement("input");
+        awayInput.type = "number";
+        awayInput.placeholder = "?";
+        awayInput.id = `away-${m.MatchID}`;
+        awayInput.min = 0;
+        
+        if (existingPred && matchStatus !== "Over") {
+          awayInput.value = existingPred.awayPred;
+          awayInput.classList.add("has-prediction");
+        }
+
+        goalInputs.appendChild(homeLabel);
+        goalInputs.appendChild(homeInput);
+        goalInputs.appendChild(awayLabel);
+        goalInputs.appendChild(awayInput);
+
+        goalsDiv.appendChild(goalsLabel);
+        goalsDiv.appendChild(goalInputs);
+
+        // Doubling section
+        const doublingDiv = document.createElement("div");
+        const doublingLabel = document.createElement("div");
+        doublingLabel.className = "prediction-label";
+        doublingLabel.textContent = "2) Doubling:";
+        
+        const doublingSection = document.createElement("div");
+        doublingSection.className = "doubling-section";
+        
+        const doublingSelect = document.createElement("select");
+        doublingSelect.id = `doubling-${m.MatchID}`;
+        
+        const optionNo = document.createElement("option");
+        optionNo.value = "No";
+        optionNo.textContent = "No";
+        
+        const optionYes = document.createElement("option");
+        optionYes.value = "Yes";
+        optionYes.textContent = "Yes";
+        
+        doublingSelect.appendChild(optionNo);
+        doublingSelect.appendChild(optionYes);
+        
+        if (existingPred && existingPred.doubling && matchStatus !== "Over") {
+          doublingSelect.value = existingPred.doubling;
+          doublingSelect.classList.add("has-prediction");
+        }
+
+        doublingSection.appendChild(doublingSelect);
+
+        doublingDiv.appendChild(doublingLabel);
+        doublingDiv.appendChild(doublingSection);
+
+        // Submit button - FIXED: Check match status FIRST
+        const submitBtn = document.createElement("button");
+        
+        if (matchStatus === "Over") {
+          submitBtn.textContent = "Match Over";
+          submitBtn.disabled = true;
+          homeInput.disabled = true;
+          awayInput.disabled = true;
+          doublingSelect.disabled = true;
+        } else if (isCutoff) {
+          submitBtn.textContent = "Closed";
+          submitBtn.disabled = true;
+          homeInput.disabled = true;
+          awayInput.disabled = true;
+          doublingSelect.disabled = true;
+        } else {
+          submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
+        }
+        
+        submitBtn.id = `btn-${m.MatchID}`;
+
+        submitBtn.onclick = async () => {
+          const homePred = homeInput.value;
+          const awayPred = awayInput.value;
+          const doubling = doublingSelect.value;
+
+          if (!homePred || !awayPred) {
+            alert("Please enter both home and away goals.");
+            return;
+          }
+
+          submitBtn.textContent = "Saving...";
+          submitBtn.disabled = true;
+
+          const success = await savePrediction(m.MatchID, homePred, awayPred, doubling);
+
+          if (success) {
+            userPredictions[m.MatchID] = {
+              homePred: homePred,
+              awayPred: awayPred,
+              doubling: doubling
+            };
+
+            const msg = document.createElement("div");
+            msg.className = "success";
+            msg.textContent = `✓ Prediction ${existingPred ? 'updated' : 'saved'}: ${m.HomeTeam} ${homePred} - ${awayPred} ${m.AwayTeam} | Doubling: ${doubling}`;
+            div.appendChild(msg);
+
+            homeInput.disabled = true;
+            awayInput.disabled = true;
+            doublingSelect.disabled = true;
+            submitBtn.textContent = "Saved";
+            
+            div.classList.remove("match-cutoff");
+            div.classList.add("match-predicted");
+          } else {
+            const msg = document.createElement("div");
+            msg.className = "error";
+            msg.textContent = "❌ Error saving prediction. Please try again.";
+            div.appendChild(msg);
+            submitBtn.disabled = false;
+            submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
+          }
+        };
+
+        div.appendChild(header);
+        div.appendChild(info);
+        div.appendChild(statusDiv);
+        if (existingMsg) div.appendChild(existingMsg);
+        div.appendChild(goalsDiv);
+        div.appendChild(doublingDiv);
+        div.appendChild(submitBtn);
+
+        container.appendChild(div);
+      });
+
+      console.log("Matches rendered successfully");
+    }
+
+    document.getElementById("setPlayerBtn").onclick = async () => {
+      const select = document.getElementById("playerName");
+      const name = select.value.trim();
+      
+      if (!name) {
+        const errorDiv = document.getElementById("playerError");
+        errorDiv.textContent = "Please select your name.";
+        errorDiv.style.display = "block";
+        return;
+      }
+      
+      playerName = name;
+      document.getElementById("playerSection").style.display = "none";
+      
+      const loadingDiv = document.createElement("div");
+      loadingDiv.id = "loadingPredictions";
+      loadingDiv.className = "loading-predictions";
+      loadingDiv.textContent = "Loading your existing predictions...";
+      document.getElementById("matchesSection").appendChild(loadingDiv);
+      
+      await fetchUserPredictions();
+      
+      loadingDiv.remove();
+      
+      renderMatches();
+    };
+
+    document.getElementById("backBtn").onclick = () => {
+      playerName = "";
+      userPredictions = {};
+      document.getElementById("userInfoSection").style.display = "none";
+      document.getElementById("playerSection").style.display = "block";
+      document.getElementById("matchesSection").innerHTML = "";
+      document.getElementById("playerError").style.display = "none";
+    };
+
+    initializeApp();
+  </script>
+</body>
+</html>
