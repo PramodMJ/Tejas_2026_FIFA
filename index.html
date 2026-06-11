@@ -22,6 +22,10 @@
       background: #fff3cd;
       border: 1px solid #ffc107;
     }
+    .match-predicted {
+      background: #d4edda;
+      border: 1px solid #28a745;
+    }
     .match-header {
       font-weight: bold;
       margin-bottom: 6px;
@@ -36,6 +40,12 @@
       font-size: 12px;
       color: #888;
       margin-bottom: 8px;
+    }
+    .existing-prediction {
+      font-size: 12px;
+      color: #28a745;
+      margin-bottom: 8px;
+      font-weight: bold;
     }
     .form-row {
       display: flex;
@@ -63,6 +73,10 @@
     input::placeholder {
       text-align: center;
     }
+    input.has-prediction {
+      background: #c3e6cb;
+      border-color: #28a745;
+    }
     .doubling-section {
       display: flex;
       gap: 8px;
@@ -79,6 +93,10 @@
       font-size: 14px;
       min-width: 120px;
     }
+    select.has-prediction {
+      background: #c3e6cb;
+      border-color: #28a745;
+    }
     button {
       padding: 8px 14px;
       border: none;
@@ -92,6 +110,9 @@
     button:disabled {
       background: #ccc;
       cursor: not-allowed;
+    }
+    button.update-btn {
+      background: #28a745;
     }
     .error { color: #dc3545; margin-top: 8px; font-size: 13px; }
     .success { color: #28a745; margin-top: 8px; font-size: 13px; }
@@ -129,6 +150,11 @@
       font-size: 13px;
       margin-top: 8px;
     }
+    .no-predictions {
+      color: #666;
+      font-size: 13px;
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -150,31 +176,38 @@
     <button id="setPlayerBtn" style="margin-top: 12px;">Start</button>
   </div>
 
+  <!-- User info section -->
+  <div id="userInfoSection" style="display: none; margin-bottom: 16px;">
+    <div style="background: #e7f3ff; padding: 12px; border-radius: 6px;">
+      <strong>👤 Your name:</strong> <span id="displayPlayerName"></span>
+      <button id="backBtn" style="width: auto; padding: 6px 12px; margin-left: 12px; background: #6c757d;">Back</button>
+    </div>
+  </div>
+
   <!-- Matches section -->
   <div id="loading">Loading players and matches...</div>
   <div id="matchesSection"></div>
 
   <script>
     // CONFIG: Replace with your SheetDB API key
-    const SHEETDB_API_KEY = "pw45s0ate4eoy";
-    const SHEETDB_MATCHES_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}?sheet=Matches`;
-    const SHEETDB_PREDICTIONS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}?sheet=Predictions`;
-    const SHEETDB_PLAYERS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}?sheet=Players`;
+    const SHEETDB_API_KEY = "YOUR_ACTUAL_KEY_HERE";
+    const SHEETDB_MATCHES_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Matches`;
+    const SHEETDB_PREDICTIONS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions`;
+    const SHEETDB_PLAYERS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Players`;
 
     let playerName = "";
     let matchesData = [];
     let playersData = [];
+    let userPredictions = {};  // Store user's predictions: { "M1": {home: "2", away: "1", doubling: "Yes"} }
 
     // Check if current time is between 8PM and 12AM IST
     function isCutoffTime() {
       const now = new Date();
-      // Convert to IST (UTC+5:30)
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
       const istOffset = 5.5 * 60 * 60000;
       const istTime = new Date(utc + istOffset);
       
       const hour = istTime.getHours();
-      // Cutoff: 8 PM (20) to 12 AM (0)
       return hour >= 20 || hour < 0;
     }
 
@@ -197,9 +230,8 @@
         if (playersData.length === 0) {
           const errorDiv = document.createElement("div");
           errorDiv.className = "no-players";
-          errorDiv.textContent = "⚠️ No players found. Please add player names to the 'Players' sheet in your Google Sheet.";
+          errorDiv.textContent = "⚠️ No players found. Please add player names to the 'Players' sheet.";
           document.getElementById("playerSection").appendChild(errorDiv);
-          document.getElementById("setPlayerBtn").disabled = true;
         } else {
           playersData.forEach(player => {
             const option = document.createElement("option");
@@ -209,10 +241,6 @@
           });
         }
       } catch (error) {
-        const errorDiv = document.createElement("div");
-        errorDiv.className = "no-players";
-        errorDiv.textContent = "⚠️ Error loading players. Please check your API key.";
-        document.getElementById("playerSection").appendChild(errorDiv);
         console.error(error);
       }
     }
@@ -223,8 +251,29 @@
         const response = await fetch(SHEETDB_MATCHES_URL);
         matchesData = await response.json();
       } catch (error) {
-        document.getElementById("loading").textContent = "Error loading matches. Please check your API key.";
         console.error(error);
+      }
+    }
+
+    // Fetch user's existing predictions
+    async function fetchUserPredictions() {
+      userPredictions = {};
+      try {
+        const response = await fetch(SHEETDB_PREDICTIONS_URL);
+        const allPredictions = await response.json();
+        
+        // Filter predictions for this user
+        allPredictions.forEach(pred => {
+          if (pred.PlayerName === playerName) {
+            userPredictions[pred.MatchID] = {
+              homePred: pred.HomePred,
+              awayPred: pred.AwayPred,
+              doubling: pred.Doubling
+            };
+          }
+        });
+      } catch (error) {
+        console.error("Error fetching predictions:", error);
       }
     }
 
@@ -235,7 +284,7 @@
       document.getElementById("loading").style.display = "none";
     }
 
-    // Save prediction to Google Sheet
+    // Save/update prediction to Google Sheet
     async function savePrediction(matchId, homePred, awayPred, doubling) {
       const payload = {
         Timestamp: new Date().toISOString(),
@@ -253,11 +302,7 @@
           body: JSON.stringify(payload)
         });
 
-        if (response.ok) {
-          return true;
-        } else {
-          return false;
-        }
+        return response.ok;
       } catch (error) {
         console.error(error);
         return false;
@@ -273,6 +318,10 @@
         return;
       }
 
+      // Show user info
+      document.getElementById("userInfoSection").style.display = "block";
+      document.getElementById("displayPlayerName").textContent = playerName;
+
       const isCutoff = isCutoffTime();
       if (isCutoff) {
         document.getElementById("cutoffNotice").style.display = "block";
@@ -282,11 +331,15 @@
 
       matchesData.forEach(m => {
         const status = getMatchStatus(m);
+        const existingPred = userPredictions[m.MatchID];
+        
         const div = document.createElement("div");
         
         let extraClass = "";
         if (status === "Played") {
           extraClass = "played";
+        } else if (existingPred) {
+          extraClass = "match-predicted";
         } else if (isCutoff) {
           extraClass = "match-cutoff";
         }
@@ -305,10 +358,20 @@
         statusDiv.className = "match-status";
         if (status === "Played") {
           statusDiv.textContent = `✓ Played | Result: ${m.HomeGoalsReal} - ${m.AwayGoalsReal}`;
+        } else if (existingPred) {
+          statusDiv.textContent = `✓ You have a prediction for this match`;
         } else if (isCutoff) {
           statusDiv.textContent = `⏸ Cutoff period (8 PM - 12 AM) | Submissions closed`;
         } else {
           statusDiv.textContent = `⏱ Not started`;
+        }
+
+        // Show existing prediction if exists
+        if (existingPred) {
+          const existingMsg = document.createElement("div");
+          existingMsg.className = "existing-prediction";
+          existingMsg.textContent = `📋 Your current prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}`;
+          div.appendChild(existingMsg);
         }
 
         // Home/Away Goals section
@@ -328,6 +391,12 @@
         homeInput.placeholder = "?";
         homeInput.id = `home-${m.MatchID}`;
         homeInput.min = 0;
+        
+        // Pre-fill if existing prediction
+        if (existingPred) {
+          homeInput.value = existingPred.homePred;
+          homeInput.classList.add("has-prediction");
+        }
 
         const awayLabel = document.createElement("label");
         awayLabel.textContent = `${m.AwayTeam}:`;
@@ -337,6 +406,12 @@
         awayInput.placeholder = "?";
         awayInput.id = `away-${m.MatchID}`;
         awayInput.min = 0;
+        
+        // Pre-fill if existing prediction
+        if (existingPred) {
+          awayInput.value = existingPred.awayPred;
+          awayInput.classList.add("has-prediction");
+        }
 
         goalInputs.appendChild(homeLabel);
         goalInputs.appendChild(homeInput);
@@ -368,6 +443,12 @@
         
         doublingSelect.appendChild(optionNo);
         doublingSelect.appendChild(optionYes);
+        
+        // Pre-select if existing prediction
+        if (existingPred && existingPred.doubling) {
+          doublingSelect.value = existingPred.doubling;
+          doublingSelect.classList.add("has-prediction");
+        }
 
         doublingSection.appendChild(doublingSelect);
 
@@ -376,7 +457,7 @@
 
         // Submit button
         const submitBtn = document.createElement("button");
-        submitBtn.textContent = "Submit Prediction";
+        submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
         submitBtn.id = `btn-${m.MatchID}`;
 
         // Disable if: Played OR cutoff time
@@ -404,28 +485,40 @@
           const success = await savePrediction(m.MatchID, homePred, awayPred, doubling);
 
           if (success) {
+            // Update userPredictions cache
+            userPredictions[m.MatchID] = {
+              homePred: homePred,
+              awayPred: awayPred,
+              doubling: doubling
+            };
+
             const msg = document.createElement("div");
             msg.className = "success";
-            msg.textContent = `✓ Prediction saved: ${m.HomeTeam} ${homePred} - ${awayPred} ${m.AwayTeam} | Doubling: ${doubling}`;
+            msg.textContent = `✓ Prediction ${existingPred ? 'updated' : 'saved'}: ${m.HomeTeam} ${homePred} - ${awayPred} ${m.AwayTeam} | Doubling: ${doubling}`;
             div.appendChild(msg);
 
             homeInput.disabled = true;
             awayInput.disabled = true;
             doublingSelect.disabled = true;
             submitBtn.textContent = "Saved";
+            
+            // Change class to show it's predicted
+            div.classList.remove("match-cutoff");
+            div.classList.add("match-predicted");
           } else {
             const msg = document.createElement("div");
             msg.className = "error";
             msg.textContent = "❌ Error saving prediction. Please try again.";
             div.appendChild(msg);
             submitBtn.disabled = false;
-            submitBtn.textContent = "Submit Prediction";
+            submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
           }
         };
 
         div.appendChild(header);
         div.appendChild(info);
         div.appendChild(statusDiv);
+        if (existingPred) div.appendChild(existingMsg);
         div.appendChild(goalsDiv);
         div.appendChild(doublingDiv);
         div.appendChild(submitBtn);
@@ -434,7 +527,7 @@
       });
     }
 
-    document.getElementById("setPlayerBtn").onclick = () => {
+    document.getElementById("setPlayerBtn").onclick = async () => {
       const select = document.getElementById("playerName");
       const name = select.value.trim();
       
@@ -447,7 +540,19 @@
       
       playerName = name;
       document.getElementById("playerSection").style.display = "none";
+      
+      // Fetch user's existing predictions
+      await fetchUserPredictions();
+      
       renderMatches();
+    };
+
+    document.getElementById("backBtn").onclick = () => {
+      playerName = "";
+      userPredictions = {};
+      document.getElementById("userInfoSection").style.display = "none";
+      document.getElementById("playerSection").style.display = "block";
+      document.getElementById("matchesSection").innerHTML = "";
     };
 
     // Initialize app on load
