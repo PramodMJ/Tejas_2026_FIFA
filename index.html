@@ -256,9 +256,9 @@
         } else {
           playersData.forEach(player => {
             const option = document.createElement("option");
-            const playerName = player.player_name || player.PlayerName || player.Playername || "";
-            option.value = playerName;
-            option.textContent = playerName;
+            const playerNameValue = player.player_name || player.PlayerName || player.Playername || "";
+            option.value = playerNameValue;
+            option.textContent = playerNameValue;
             select.appendChild(option);
           });
         }
@@ -334,49 +334,89 @@
       try {
         const existingPred = userPredictions[matchId];
         
+        console.log("=== Starting savePrediction ===");
+        console.log("matchId:", matchId);
+        console.log("existingPred:", existingPred);
+        
         // STEP 1: If exists, DELETE old row
         if (existingPred && existingPred.id) {
-          console.log("Deleting existing prediction with ID:", existingPred.id);
+          console.log("STEP 1: Deleting existing prediction with ID:", existingPred.id);
           
           const deleteUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=delete&id=${existingPred.id}`;
+          console.log("Delete URL:", deleteUrl);
           
           const deleteResponse = await fetch(deleteUrl, {
             method: 'POST'
           });
           
-          if (deleteResponse.ok) {
-            console.log("✓ Old row deleted");
-          } else {
-            console.error("Failed to delete old row");
+          console.log("Delete response status:", deleteResponse.status);
+          
+          try {
+            const deleteResult = await deleteResponse.json();
+            console.log("Delete result:", deleteResult);
+            
+            if (deleteResult.success) {
+              console.log("✓ Old row deleted successfully");
+            } else {
+              console.error("✗ Failed to delete old row:", deleteResult.message);
+            }
+          } catch (e) {
+            console.error("Error parsing delete response:", e);
           }
+        } else {
+          console.log("STEP 1: No existing prediction to delete");
         }
 
         // STEP 2: WRITE new row
+        console.log("STEP 2: Writing new prediction");
+        
         const writeUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=write`;
+        console.log("Write URL:", writeUrl);
         
         const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}`;
+        console.log("Request body:", body);
         
         const writeResponse = await fetch(writeUrl, {
           method: 'POST',
           body: body
         });
 
-        const ok = writeResponse.ok;
-        console.log("New prediction saved:", ok);
+        console.log("Write response status:", writeResponse.status);
         
-        if (ok) {
-          // Update local cache
-          userPredictions[matchId] = {
-            homePred: homePred,
-            awayPred: awayPred,
-            doubling: doubling,
-            timestamp: timestamp
-          };
+        try {
+          const writeResult = await writeResponse.json();
+          console.log("Write result:", writeResult);
+          
+          if (writeResult.success) {
+            console.log("✓ New row written successfully");
+            
+            // Update local cache
+            userPredictions[matchId] = {
+              homePred: homePred,
+              awayPred: awayPred,
+              doubling: doubling,
+              timestamp: timestamp,
+              id: null // Will be assigned by sheet
+            };
+            
+            return true;
+          } else {
+            console.error("✗ Failed to write new row:", writeResult.message);
+            return false;
+          }
+        } catch (e) {
+          console.error("Error parsing write response:", e);
+          // Try to read as text
+          try {
+            const text = await writeResponse.text();
+            console.log("Write response text:", text);
+          } catch (e2) {
+            console.error("Could not read response:", e2);
+          }
+          return false;
         }
-        
-        return ok;
       } catch (error) {
-        console.error("Error saving prediction:", error);
+        console.error("Error in savePrediction:", error);
         return false;
       }
     }
@@ -543,11 +583,13 @@
           submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
         }
 
+        // FIX: Add error check BEFORE savePrediction()
         submitBtn.onclick = async () => {
           const homePred = homeInput.value;
           const awayPred = awayInput.value;
           const doubling = doublingSelect.value;
 
+          // FIX: Check if match is Over BEFORE saving
           if (matchStatus === "Over") {
             alert("⚠️ This match is Over. You cannot submit or update predictions.");
             return;
@@ -576,6 +618,10 @@
             
             div.classList.remove("match-cutoff");
             div.classList.add("match-predicted");
+            
+            // FIX: Re-fetch predictions from server to confirm
+            await fetchUserPredictions();
+            console.log("Refetched predictions after save:", userPredictions);
           } else {
             const msg = document.createElement("div");
             msg.className = "error";
