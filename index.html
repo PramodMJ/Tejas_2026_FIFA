@@ -200,7 +200,7 @@
 
   <script>
     // CONFIG: Your Apps Script Web App URL
-    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzWFbVKomVRA63kND1WLdwS2OnHV0d86XvULJkZWYFppl3jWZscPET9VBFva1hxvu2o/exec";
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwRzAMiSjMsxeUNJ5p5tmdxg4w6daLl3Qc7ktNgNZT32kB5Z83m1mgDMhyQMHC3wyJj/exec";
 
     let playerName = "";
     let matchesData = [];
@@ -237,7 +237,6 @@
         
         const select = document.getElementById("playerName");
         
-        // Check if element exists
         if (!select) {
           console.error("ERROR: player select element not found!");
           return;
@@ -358,7 +357,7 @@
             if (deleteResult.success) {
               console.log("✓ Old row deleted successfully");
             } else {
-              console.error("✗ Failed to delete old row:", deleteResult.message);
+              console.error("✗ Failed to delete old row:", deleteResult.error || deleteResult.message);
             }
           } catch (e) {
             console.error("Error parsing delete response:", e);
@@ -390,23 +389,21 @@
           if (writeResult.success) {
             console.log("✓ New row written successfully");
             
-            // Update local cache
             userPredictions[matchId] = {
               homePred: homePred,
               awayPred: awayPred,
               doubling: doubling,
               timestamp: timestamp,
-              id: null // Will be assigned by sheet
+              id: null
             };
             
             return true;
           } else {
-            console.error("✗ Failed to write new row:", writeResult.message);
+            console.error("✗ Failed to write new row:", writeResult.error || writeResult.message);
             return false;
           }
         } catch (e) {
           console.error("Error parsing write response:", e);
-          // Try to read as text
           try {
             const text = await writeResponse.text();
             console.log("Write response text:", text);
@@ -478,7 +475,8 @@
           statusDiv.innerHTML = `<span class="status-live">✓ Live</span> | Open for predictions`;
         }
 
-        if (existingPred && matchStatus !== "Over") {
+        // NEW: Show existing prediction even when match is Over
+        if (existingPred) {
           const existingMsg = document.createElement("div");
           existingMsg.className = "existing-prediction";
           existingMsg.textContent = `📋 Your prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}`;
@@ -502,7 +500,7 @@
         homeInput.id = `home-${m.MatchID}`;
         homeInput.min = 0;
         
-        if (existingPred && matchStatus !== "Over") {
+        if (existingPred) {
           homeInput.value = existingPred.homePred;
           homeInput.classList.add("has-prediction");
         }
@@ -516,7 +514,7 @@
         awayInput.id = `away-${m.MatchID}`;
         awayInput.min = 0;
         
-        if (existingPred && matchStatus !== "Over") {
+        if (existingPred) {
           awayInput.value = existingPred.awayPred;
           awayInput.classList.add("has-prediction");
         }
@@ -551,7 +549,7 @@
         doublingSelect.appendChild(optionNo);
         doublingSelect.appendChild(optionYes);
         
-        if (existingPred && existingPred.doubling && matchStatus !== "Over") {
+        if (existingPred && existingPred.doubling) {
           doublingSelect.value = existingPred.doubling;
           doublingSelect.classList.add("has-prediction");
         }
@@ -583,13 +581,11 @@
           submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
         }
 
-        // FIX: Add error check BEFORE savePrediction()
         submitBtn.onclick = async () => {
           const homePred = homeInput.value;
           const awayPred = awayInput.value;
           const doubling = doublingSelect.value;
 
-          // FIX: Check if match is Over BEFORE saving
           if (matchStatus === "Over") {
             alert("⚠️ This match is Over. You cannot submit or update predictions.");
             return;
@@ -619,7 +615,6 @@
             div.classList.remove("match-cutoff");
             div.classList.add("match-predicted");
             
-            // FIX: Re-fetch predictions from server to confirm
             await fetchUserPredictions();
             console.log("Refetched predictions after save:", userPredictions);
           } else {
