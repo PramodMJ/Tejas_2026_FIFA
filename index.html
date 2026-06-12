@@ -199,11 +199,8 @@
   <div id="matchesSection"></div>
 
   <script>
-    // CONFIG: Replace with your SheetDB API key
-    const SHEETDB_API_KEY = "nx22x6vlrq690";
-    const SHEETDB_MATCHES_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Matches`;
-    const SHEETDB_PREDICTIONS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions`;
-    const SHEETDB_PLAYERS_URL = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Players`;
+    // CONFIG: Your Apps Script Web App URL
+    const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwRzAMiSjMsxeUNJ5p5tmdxg4w6daLl3Qc7ktNgNZT32kB5Z83m1mgDMhyQMHC3wyJj/exec";
 
     let playerName = "";
     let matchesData = [];
@@ -217,7 +214,7 @@
       const istOffset = 5.5 * 60 * 60000;
       const istTime = new Date(utc + istOffset);
       const hour = istTime.getHours();
-      return hour >= 22 || hour < 0;
+      return hour >= 20 || hour < 0;
     }
 
     // Get match status from the sheet (Live or Over)
@@ -228,11 +225,14 @@
       return "Live";
     }
 
-    // Fetch players from Google Sheet
+    // Fetch players from Apps Script
     async function fetchPlayers() {
       try {
-        const response = await fetch(SHEETDB_PLAYERS_URL);
+        const url = `${APPS_SCRIPT_URL}?path=Players&action=read`;
+        const response = await fetch(url);
         playersData = await response.json();
+        
+        console.log("Players loaded:", playersData.length);
         
         const select = document.getElementById("playerName");
         select.innerHTML = '<option value="">-- Select your name --</option>';
@@ -245,8 +245,8 @@
         } else {
           playersData.forEach(player => {
             const option = document.createElement("option");
-            option.value = player.PlayerName;
-            option.textContent = player.PlayerName;
+            option.value = player.player_name;
+            option.textContent = player.player_name;
             select.appendChild(option);
           });
         }
@@ -255,107 +255,113 @@
       }
     }
 
-    // Fetch matches from Google Sheet
+    // Fetch matches from Apps Script
     async function fetchMatches() {
       try {
-        const response = await fetch(SHEETDB_MATCHES_URL);
+        const url = `${APPS_SCRIPT_URL}?path=Matches&action=read`;
+        const response = await fetch(url);
         matchesData = await response.json();
+        
         console.log("Matches loaded:", matchesData.length);
       } catch (error) {
         console.error("Error fetching matches:", error);
       }
     }
 
-    // Fetch user's existing predictions
+    // Fetch user's existing predictions from Apps Script
     async function fetchUserPredictions() {
       userPredictions = {};
-      console.log("Fetching predictions for:", playerName);
       
       try {
-        const response = await fetch(SHEETDB_PREDICTIONS_URL);
+        const url = `${APPS_SCRIPT_URL}?path=Predictions&action=read`;
+        const response = await fetch(url);
         const allPredictions = await response.json();
+        
         console.log("All predictions:", allPredictions.length);
         
-        const userPreds = allPredictions.filter(pred => pred.PlayerName === playerName);
+        const userPreds = allPredictions.filter(pred => pred.player_name === playerName);
+        
         console.log("User predictions:", userPreds.length);
         
         userPreds.forEach(pred => {
-          // Only store predictions for LIVE matches
-          const match = matchesData.find(m => m.MatchID === pred.MatchID);
+          const match = matchesData.find(m => m.MatchID === pred.match_id);
+          
           if (match && getMatchStatus(match) !== "Over") {
-            userPredictions[pred.MatchID] = {
-              homePred: pred.HomePred,
-              awayPred: pred.AwayPred,
-              doubling: pred.Doubling
-            };
+            const existing = userPredictions[pred.match_id];
+            const timestamp = pred.timestamp || "";
+            
+            if (!existing || timestamp > existing.timestamp) {
+              userPredictions[pred.match_id] = {
+                homePred: pred.home_pred,
+                awayPred: pred.away_pred,
+                doubling: pred.doubling,
+                timestamp: timestamp,
+                id: pred.ID
+              };
+            }
           }
         });
+        
+        console.log("Final user predictions:", Object.keys(userPredictions).length);
       } catch (error) {
-        console.error("Error fetching user predictions:", error);
-        alert("⚠️ Warning: Could not load your existing predictions. You can still submit new predictions.");
+        console.error("Error fetching predictions:", error);
       }
     }
 
     // Initialize app
     async function initializeApp() {
-      console.log("Initializing app...");
       await fetchPlayers();
       await fetchMatches();
       document.getElementById("loading").style.display = "none";
-      console.log("App initialized");
     }
 
-    // Save/update prediction to Google Sheet (prevents duplicates)
+    // Save/update prediction using Apps Script (DELETE old + WRITE new)
     async function savePrediction(matchId, homePred, awayPred, doubling) {
-      const payload = {
-        Timestamp: new Date().toISOString(),
-        PlayerName: playerName,
-        MatchID: matchId,
-        HomePred: homePred,
-        AwayPred: awayPred,
-        Doubling: doubling
-      };
-
+      const timestamp = new Date().toISOString();
+      
       try {
-        // STEP 1: Get all existing predictions
-        const response = await fetch(SHEETDB_PREDICTIONS_URL);
-        const allPredictions = await response.json();
+        const existingPred = userPredictions[matchId];
         
-        // STEP 2: Find existing prediction for this player+match
-        const existingIndex = allPredictions.findIndex(
-          pred => pred.PlayerName === playerName && pred.MatchID === matchId
-        );
-
-        console.log("Existing prediction index:", existingIndex);
-
-        // STEP 3: If exists, delete it
-        if (existingIndex !== -1) {
-          console.log("Deleting existing prediction at index:", existingIndex);
+        // STEP 1: If exists, DELETE old row
+        if (existingPred && existingPred.id) {
+          console.log("Deleting existing prediction with ID:", existingPred.id);
           
-          const deleteUrl = `https://sheetdb.io/api/v1/${SHEETDB_API_KEY}/?sheet=Predictions`;
+          const deleteUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=delete&id=${existingPred.id}`;
           
-          const deleteResponse = await fetch(deleteUrl, { 
-            method: "DELETE", 
-            headers: { "Content-Type": "application/json"}, 
-            body: JSON.stringify({ index: existingIndex })
+          const deleteResponse = await fetch(deleteUrl, {
+            method: 'POST'
           });
           
           if (deleteResponse.ok) {
-            console.log("✓ Existing prediction deleted");
+            console.log("✓ Old row deleted");
           } else {
-            console.error("✗ Failed to delete existing prediction:", deleteResponse.status);
+            console.error("Failed to delete old row");
           }
         }
 
-        // STEP 4: Add new prediction
-        const postResponse = await fetch(SHEETDB_PREDICTIONS_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
+        // STEP 2: WRITE new row
+        const writeUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=write`;
+        
+        const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}`;
+        
+        const writeResponse = await fetch(writeUrl, {
+          method: 'POST',
+          body: body
         });
 
-        const ok = postResponse.ok;
+        const ok = writeResponse.ok;
         console.log("New prediction saved:", ok);
+        
+        if (ok) {
+          // Update local cache
+          userPredictions[matchId] = {
+            homePred: homePred,
+            awayPred: awayPred,
+            doubling: doubling,
+            timestamp: timestamp
+          };
+        }
+        
         return ok;
       } catch (error) {
         console.error("Error saving prediction:", error);
@@ -420,15 +426,13 @@
           statusDiv.innerHTML = `<span class="status-live">✓ Live</span> | Open for predictions`;
         }
 
-        // Show existing prediction ONLY if match is Live
         if (existingPred && matchStatus !== "Over") {
           const existingMsg = document.createElement("div");
           existingMsg.className = "existing-prediction";
-          existingMsg.textContent = `📋 Your current prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}`;
+          existingMsg.textContent = `📋 Your prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}`;
           div.appendChild(existingMsg);
         }
 
-        // Create inputs
         const goalsDiv = document.createElement("div");
         const goalsLabel = document.createElement("div");
         goalsLabel.className = "prediction-label";
@@ -473,7 +477,6 @@
         goalsDiv.appendChild(goalsLabel);
         goalsDiv.appendChild(goalInputs);
 
-        // Doubling section
         const doublingDiv = document.createElement("div");
         const doublingLabel = document.createElement("div");
         doublingLabel.className = "prediction-label";
@@ -506,11 +509,9 @@
         doublingDiv.appendChild(doublingLabel);
         doublingDiv.appendChild(doublingSection);
 
-        // Submit button - CRITICAL: Check matchStatus FIRST
         const submitBtn = document.createElement("button");
         submitBtn.id = `btn-${m.MatchID}`;
 
-        // FIRST PRIORITY: If Over, DISABLE IMMEDIATELY
         if (matchStatus === "Over") {
           submitBtn.textContent = "Match Over";
           submitBtn.disabled = true;
@@ -527,7 +528,6 @@
           awayInput.disabled = true;
           doublingSelect.disabled = true;
         } else {
-          // Live match - enable button
           submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
         }
 
@@ -536,7 +536,6 @@
           const awayPred = awayInput.value;
           const doubling = doublingSelect.value;
 
-          // Double-check: match must be Live
           if (matchStatus === "Over") {
             alert("⚠️ This match is Over. You cannot submit or update predictions.");
             return;
@@ -553,12 +552,6 @@
           const success = await savePrediction(m.MatchID, homePred, awayPred, doubling);
 
           if (success) {
-            userPredictions[m.MatchID] = {
-              homePred: homePred,
-              awayPred: awayPred,
-              doubling: doubling
-            };
-
             const msg = document.createElement("div");
             msg.className = "success";
             msg.textContent = `✓ Prediction ${existingPred ? 'updated' : 'saved'}: ${m.HomeTeam} ${homePred} - ${awayPred} ${m.AwayTeam} | Doubling: ${doubling}`;
