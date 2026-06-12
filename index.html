@@ -232,20 +232,33 @@
         const response = await fetch(url);
         playersData = await response.json();
         
-        console.log("Players loaded:", playersData.length);        
-        const select = document.getElementById("PlayerName");
+        console.log("Players loaded:", playersData.length);
+        console.log("First player:", playersData[0]);
+        
+        const select = document.getElementById("playerName");
+        
+        // Check if element exists
+        if (!select) {
+          console.error("ERROR: player select element not found!");
+          return;
+        }
+        
         select.innerHTML = '<option value="">-- Select your name --</option>';
         
         if (playersData.length === 0) {
           const errorDiv = document.createElement("div");
           errorDiv.className = "no-players";
           errorDiv.textContent = "⚠️ No players found. Please add player names to the 'Players' sheet.";
-          document.getElementById("playerSection").appendChild(errorDiv);
+          const playerSection = document.getElementById("playerSection");
+          if (playerSection) {
+            playerSection.appendChild(errorDiv);
+          }
         } else {
           playersData.forEach(player => {
             const option = document.createElement("option");
-            option.value = player.PlayerName;
-            option.textContent = player.PlayerName;
+            const playerName = player.player_name || player.PlayerName || player.Playername || "";
+            option.value = playerName;
+            option.textContent = playerName;
             select.appendChild(option);
           });
         }
