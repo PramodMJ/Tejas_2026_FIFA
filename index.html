@@ -232,9 +232,7 @@
         const response = await fetch(url);
         playersData = await response.json();
         
-        console.log("Players loaded:", playersData.length);
-        console.log("First Player:", playersData[0]);
-        
+        console.log("Players loaded:", playersData.length);        
         const select = document.getElementById("PlayerName");
         select.innerHTML = '<option value="">-- Select your name --</option>';
         
