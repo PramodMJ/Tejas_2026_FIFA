@@ -327,7 +327,7 @@
           const match = matchesData.find(m => m.MatchID === pred.match_id);
           
 //          if (match && getMatchStatus(match) !== "Over") {
-          if(match)
+          if(match) {
             const existing = userPredictions[pred.match_id];
             const timestamp = pred.timestamp || "";
             
