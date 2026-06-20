@@ -451,8 +451,20 @@
               
               return true;
             } else {
-              console.error("✗ Failed to update row:", updateResult.error || updateResult.message);
-              return false;
+             console.error("✗ Failed to update row:", updateResult.error);
+  
+             // Show detailed error message
+             if (updateResult.searchingFor) {
+               console.error("Searching for:", updateResult.searchingFor);
+               console.error("Found rows for player:", updateResult.foundRowsForPlayer);
+    
+               alert("❌ Error: Row not found "            +
+                     "Searching for: " + updateResult.searchingFor.player_name + " | Match " + updateResult.searchingFor.match_id + " " +
+          "Found " + updateResult.foundRowsForPlayer.length + " rows for this player: " +
+          updateResult.foundRowsForPlayer.map(r => "  Row " + r.row + ": Match " + r.match_id + " (" + r.home_pred + "-" + r.away_pred + ")").join(" "));
+             }
+  
+             return false;
             }
           } catch (e) {
             console.error("Error parsing update response:", e);
