@@ -419,7 +419,8 @@
         }
         
         // NEW: Use UPDATE instead of DELETE + WRITE (1 API call instead of 2)
-        if (existingPred && existingPred.id) {
+        //if (existingPred && existingPred.id) {
+        if (existingPred) {
           console.log("Updating existing prediction for MatchID:", matchId);
           
           const updateUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=update`;
