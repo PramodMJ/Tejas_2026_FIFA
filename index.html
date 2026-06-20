@@ -226,7 +226,7 @@
       const istOffset = 5.5 * 60 * 60000;
       const istTime = new Date(utc + istOffset);
       const hour = istTime.getHours();
-      return hour >= 0 || hour < 1;
+      return hour >= 20 || hour < 22;
     }
 
     // Get match status from the sheet (Live or Over)
