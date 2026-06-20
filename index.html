@@ -181,7 +181,7 @@
 <body>
   <h1>FIFA World Cup Prediction Game</h1>
 
-  <!-- Cutoff notice (NEW: 10 PM instead of 8 PM) -->
+  <!-- Cutoff notice (10 PM - 12 AM IST) -->
   <div id="cutoffNotice" class="cutoff-note" style="display:none;">
     ⚠️ Prediction submission is currently **closed** (10 PM - 12 AM IST).<br>
     It will reopen at 12 AM midnight.
@@ -219,14 +219,14 @@
     let userPredictions = {};
     let matchScores = {};
 
-    // Check if current time is between 10PM and 12AM IST (NEW: 10 PM instead of 8 PM)
+    // Check if current time is between 10PM and 12AM IST
     function isCutoffTime() {
       const now = new Date();
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
       const istOffset = 5.5 * 60 * 60000;
       const istTime = new Date(utc + istOffset);
       const hour = istTime.getHours();
-      return hour >= 22 || hour < 0;  // NEW: 22 instead of 20
+      return hour >= 22 || hour < 0;
     }
 
     // Get match status from the sheet (Live or Over)
@@ -296,7 +296,7 @@
       matchScores = {};
       
       try {
-        // STEP 1: Fetch all predictions (NEW: includes all matches, not just non-Over)
+        // STEP 1: Fetch all predictions (includes all matches)
         const url = `${APPS_SCRIPT_URL}?path=Predictions&action=read`;
         const response = await fetch(url);
         const allPredictions = await response.json();
@@ -310,7 +310,7 @@
         userPreds.forEach(pred => {
           const match = matchesData.find(m => m.MatchID === pred.match_id);
           
-          // NEW: Fetch for ALL matches (removed "getMatchStatus(match) !== 'Over'" check)
+          // Fetch for ALL matches (no "Over" check)
           if (match) {
             const existing = userPredictions[pred.match_id];
             const timestamp = pred.timestamp || "";
@@ -321,7 +321,7 @@
                 awayPred: pred.away_pred,
                 doubling: pred.doubling,
                 resultsPred: pred.results_pred || '',
-                resultsStage: pred.results_stage || '',  // NEW: Store results_stage
+                resultsStage: pred.results_stage || '',
                 timestamp: timestamp,
                 id: pred.ID
               };
@@ -374,7 +374,7 @@
       }
     }
 
-    // Save/update prediction (includes results_stage)
+    // Save/update prediction (results_stage calculated in index.html)
     async function savePrediction(matchId, homePred, awayPred, doubling, winner, homeTeam, awayTeam) {
       const timestamp = new Date().toISOString();
       
@@ -383,7 +383,6 @@
         
         console.log("=== Starting savePrediction ===");
         console.log("matchId:", matchId);
-        console.log("existingPred:", existingPred);
         
         // Auto-calculate winner for MatchID <= 72
         if (matchId <= 72) {
@@ -401,7 +400,25 @@
           }
         }
         
-        // STEP 1: DELETE old row
+        // NEW: Calculate results_stage in index.html
+        let resultsStage;
+        if (matchId < 73) {
+          resultsStage = "NA";
+          console.log("results_stage: NA (MatchID < 73)");
+        } else {
+          const home = parseInt(homePred) || 0;
+          const away = parseInt(awayPred) || 0;
+          
+          if (home === away) {
+            resultsStage = "Penalty";
+            console.log("results_stage: Penalty (Draw)");
+          } else {
+            resultsStage = "Full Time";
+            console.log("results_stage: Full Time (Not draw)");
+          }
+        }
+        
+        // STEP 1: DELETE old row if exists
         if (existingPred && existingPred.id) {
           console.log("STEP 1: Deleting existing prediction with ID:", existingPred.id);
           
@@ -422,12 +439,15 @@
           }
         }
 
-        // STEP 2: WRITE new row
+        // STEP 2: WRITE new row (includes results_stage)
         console.log("STEP 2: Writing new prediction");
         
         const writeUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=write`;
         
-        const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}&results_pred=${winner}`;
+        // NEW: Include results_stage in request body
+        const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}&results_pred=${winner}&results_stage=${resultsStage}`;
+        
+        console.log("Request body:", body);
         
         const writeResponse = await fetch(writeUrl, {
           method: 'POST',
@@ -445,7 +465,7 @@
               awayPred: awayPred,
               doubling: doubling,
               resultsPred: winner,
-              resultsStage: '',
+              resultsStage: resultsStage,  // NEW: Store results_stage
               timestamp: timestamp,
               id: null
             };
@@ -511,10 +531,10 @@
         info.className = "match-info";
         info.textContent = m.Date;
 
-        // NEW: Display match score (always show, even if 0, with 2 decimals)
+        // Display match score (always show, 2 decimals)
         const scoreDiv = document.createElement("div");
         scoreDiv.className = "score-display";
-        scoreDiv.textContent = `⭐ Your Score: ${matchScore.toFixed(2)} points`;  // NEW: .toFixed(2)
+        scoreDiv.textContent = `⭐ Your Score: ${matchScore.toFixed(2)} points`;
         div.appendChild(scoreDiv);
 
         const statusDiv = document.createElement("div");
@@ -532,7 +552,7 @@
           const existingMsg = document.createElement("div");
           existingMsg.className = "existing-prediction";
           let winnerText = existingPred.resultsPred ? ` | Winner: ${existingPred.resultsPred}` : '';
-          let stageText = existingPred.resultsStage ? ` | Stage: ${existingPred.resultsStage}` : '';  // NEW: Show results_stage
+          let stageText = existingPred.resultsStage ? ` | Stage: ${existingPred.resultsStage}` : '';
           existingMsg.textContent = `📋 Your prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}${winnerText}${stageText}`;
           div.appendChild(existingMsg);
         }
@@ -748,7 +768,8 @@
             const msg = document.createElement("div");
             msg.className = "success";
             let winnerText = winner ? ` | Winner: ${winner}` : '';
-            msg.textContent = `✓ Prediction ${existingPred ? 'updated' : 'saved'}: ${m.HomeTeam} ${homePred} - ${awayPred} ${m.AwayTeam} | Doubling: ${doubling}${winnerText}`;
+            let stageText = userPredictions[m.MatchID].resultsStage ? ` | Stage: ${userPredictions[m.MatchID].resultsStage}` : '';
+            msg.textContent = `✓ Prediction ${existingPred ? 'updated' : 'saved'}: ${m.HomeTeam} ${homePred} - ${awayPred} ${m.AwayTeam} | Doubling: ${doubling}${winnerText}${stageText}`;
             div.appendChild(msg);
 
             homeInput.disabled = true;
@@ -766,7 +787,7 @@
             div.classList.remove("match-cutoff");
             div.classList.add("match-predicted");
             
-            //await fetchUserPredictions();
+            console.log("Prediction saved successfully");
           } else {
             const msg = document.createElement("div");
             msg.className = "error";
