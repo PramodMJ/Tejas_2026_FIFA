@@ -226,7 +226,7 @@
       const istOffset = 5.5 * 60 * 60000;
       const istTime = new Date(utc + istOffset);
       const hour = istTime.getHours();
-      return hour >= 22 || hour < 0;
+      return hour >= 23 || hour < 0;
     }
 
     // Get match status from the sheet (Live or Over)
@@ -374,7 +374,7 @@
       }
     }
 
-    // Save/update prediction (results_stage calculated in index.html)
+    // Save/update prediction (uses UPDATE instead of DELETE + WRITE)
     async function savePrediction(matchId, homePred, awayPred, doubling, winner, homeTeam, awayTeam) {
       const timestamp = new Date().toISOString();
       
@@ -400,7 +400,7 @@
           }
         }
         
-        // NEW: Calculate results_stage in index.html
+        // Calculate results_stage in index.html
         let resultsStage;
         if (matchId < 73) {
           resultsStage = "NA";
@@ -418,66 +418,86 @@
           }
         }
         
-        // STEP 1: DELETE old row if exists
+        // NEW: Use UPDATE instead of DELETE + WRITE (1 API call instead of 2)
         if (existingPred && existingPred.id) {
-          console.log("STEP 1: Deleting existing prediction with ID:", existingPred.id);
+          console.log("Updating existing prediction for MatchID:", matchId);
           
-          const deleteUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=delete&id=${existingPred.id}`;
+          const updateUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=update`;
           
-          const deleteResponse = await fetch(deleteUrl, {
-            method: 'POST'
+          const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}&results_pred=${winner}&results_stage=${resultsStage}`;
+          
+          console.log("Update body:", body);
+          
+          const updateResponse = await fetch(updateUrl, {
+            method: 'POST',
+            body: body
           });
           
           try {
-            const deleteResult = await deleteResponse.json();
+            const updateResult = await updateResponse.json();
             
-            if (deleteResult.success) {
-              console.log("✓ Old row deleted successfully");
+            if (updateResult.success) {
+              console.log("✓ Row updated successfully");
+              
+              userPredictions[matchId] = {
+                homePred: homePred,
+                awayPred: awayPred,
+                doubling: doubling,
+                resultsPred: winner,
+                resultsStage: resultsStage,
+                timestamp: timestamp,
+                id: existingPred.id  // Keep same ID
+              };
+              
+              return true;
+            } else {
+              console.error("✗ Failed to update row:", updateResult.error || updateResult.message);
+              return false;
             }
           } catch (e) {
-            console.error("Error parsing delete response:", e);
-          }
-        }
-
-        // STEP 2: WRITE new row (includes results_stage)
-        console.log("STEP 2: Writing new prediction");
-        
-        const writeUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=write`;
-        
-        // NEW: Include results_stage in request body
-        const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}&results_pred=${winner}&results_stage=${resultsStage}`;
-        
-        console.log("Request body:", body);
-        
-        const writeResponse = await fetch(writeUrl, {
-          method: 'POST',
-          body: body
-        });
-
-        try {
-          const writeResult = await writeResponse.json();
-          
-          if (writeResult.success) {
-            console.log("✓ New row written successfully");
-            
-            userPredictions[matchId] = {
-              homePred: homePred,
-              awayPred: awayPred,
-              doubling: doubling,
-              resultsPred: winner,
-              resultsStage: resultsStage,  // NEW: Store results_stage
-              timestamp: timestamp,
-              id: null
-            };
-            
-            return true;
-          } else {
-            console.error("✗ Failed to write new row:", writeResult.error || writeResult.message);
+            console.error("Error parsing update response:", e);
             return false;
           }
-        } catch (e) {
-          console.error("Error parsing write response:", e);
-          return false;
+        } else {
+          // NEW: Write new row only if no existing prediction
+          console.log("Creating new prediction for MatchID:", matchId);
+          
+          const writeUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=write`;
+          
+          const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}&results_pred=${winner}&results_stage=${resultsStage}`;
+          
+          console.log("Write body:", body);
+          
+          const writeResponse = await fetch(writeUrl, {
+            method: 'POST',
+            body: body
+          });
+          
+          try {
+            const writeResult = await writeResponse.json();
+            
+            if (writeResult.success) {
+              console.log("✓ New row written successfully");
+              
+              userPredictions[matchId] = {
+                homePred: homePred,
+                awayPred: awayPred,
+                doubling: doubling,
+                resultsPred: winner,
+                resultsStage: resultsStage,
+                timestamp: timestamp,
+                id: writeResult.id
+              };
+              
+              return true;
+            } else {
+              console.error("✗ Failed to write new row:", writeResult.error || writeResult.message);
+              return false;
+            }
+          } catch (e) {
+            console.error("Error parsing write response:", e);
+            return false;
+          }
         }
       } catch (error) {
         console.error("Error in savePrediction:", error);
