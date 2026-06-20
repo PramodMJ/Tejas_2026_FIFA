@@ -408,18 +408,12 @@
               console.error("Searching for:", updateResult.searchingFor);
               console.error("Found rows for player:", updateResult.foundRowsForPlayer);
               
-              let errorMsg = "❌ Error: Row not found
-
-";
-              errorMsg += "Searching for: " + updateResult.searchingFor.player_name + " | Match " + updateResult.searchingFor.match_id + "
-
-";
+              let errorMsg = "❌ Error: Row not found";
+              errorMsg += "Searching for: " + updateResult.searchingFor.player_name + " | Match " + updateResult.searchingFor.match_id + " ";
               
               if (updateResult.foundRowsForPlayer.length > 0) {
-                errorMsg += "Found " + updateResult.foundRowsForPlayer.length + " rows for this player:
-";
-                errorMsg += updateResult.foundRowsForPlayer.map(r => "  Row " + r.row + ": Match " + r.match_id + " (" + r.home_pred + "-" + r.away_pred + ")").join("
-");
+                errorMsg += "Found " + updateResult.foundRowsForPlayer.length + " rows for this player: ";
+                errorMsg += updateResult.foundRowsForPlayer.map(r => "  Row " + r.row + ": Match " + r.match_id + " (" + r.home_pred + "-" + r.away_pred + ")").join(" ");
               } else {
                 errorMsg += "No rows found for this player.";
               }
