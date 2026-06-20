@@ -181,13 +181,11 @@
 <body>
   <h1>FIFA World Cup Prediction Game</h1>
 
-  <!-- Cutoff notice (10 PM - 12 AM IST) -->
   <div id="cutoffNotice" class="cutoff-note" style="display:none;">
     ⚠️ Prediction submission is currently **closed** (10 PM - 12 AM IST).<br>
     It will reopen at 12 AM midnight.
   </div>
 
-  <!-- Player section -->
   <div class="player-section" id="playerSection">
     <label for="playerName" style="font-size: 14px; margin-bottom: 8px; display: block;">Select your name:</label>
     <select id="playerName">
@@ -197,7 +195,6 @@
     <button id="setPlayerBtn" style="margin-top: 12px;">Start</button>
   </div>
 
-  <!-- User info section -->
   <div id="userInfoSection" style="display: none; margin-bottom: 16px;">
     <div style="background: #e7f3ff; padding: 12px; border-radius: 6px;">
       <strong>👤 Your name:</strong> <span id="displayPlayerName"></span>
@@ -205,12 +202,10 @@
     </div>
   </div>
 
-  <!-- Matches section -->
   <div id="loading">Loading players and matches...</div>
   <div id="matchesSection"></div>
 
   <script>
-    // CONFIG: Your Apps Script Web App URL
     const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzWFbVKomVRA63kND1WLdwS2OnHV0d86XvULJkZWYFppl3jWZscPET9VBFva1hxvu2o/exec";
 
     let playerName = "";
@@ -219,7 +214,6 @@
     let userPredictions = {};
     let matchScores = {};
 
-    // Check if current time is between 10PM and 12AM IST
     function isCutoffTime() {
       const now = new Date();
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
@@ -229,7 +223,6 @@
       return hour >= 24 || hour < 0;
     }
 
-    // Get match status from the sheet (Live or Over)
     function getMatchStatus(match) {
       if (match.MatchStatus && match.MatchStatus.toLowerCase() === "over") {
         return "Over";
@@ -237,14 +230,11 @@
       return "Live";
     }
 
-    // Fetch players from Apps Script
     async function fetchPlayers() {
       try {
         const url = `${APPS_SCRIPT_URL}?path=Players&action=read`;
         const response = await fetch(url);
         playersData = await response.json();
-        
-        console.log("Players loaded:", playersData.length);
         
         const select = document.getElementById("playerName");
         
@@ -258,7 +248,7 @@
         if (playersData.length === 0) {
           const errorDiv = document.createElement("div");
           errorDiv.className = "no-players";
-          errorDiv.textContent = "⚠️ No players found. Please add player names to the 'Players' sheet.";
+          errorDiv.textContent = "⚠️ No players found.";
           const playerSection = document.getElementById("playerSection");
           if (playerSection) {
             playerSection.appendChild(errorDiv);
@@ -277,40 +267,30 @@
       }
     }
 
-    // Fetch matches from Apps Script
     async function fetchMatches() {
       try {
         const url = `${APPS_SCRIPT_URL}?path=Matches&action=read`;
         const response = await fetch(url);
         matchesData = await response.json();
-        
-        console.log("Matches loaded:", matchesData.length);
       } catch (error) {
         console.error("Error fetching matches:", error);
       }
     }
 
-    // Fetch user's existing predictions and ALL scores (includes results_stage)
     async function fetchUserPredictions() {
       userPredictions = {};
       matchScores = {};
       
       try {
-        // STEP 1: Fetch all predictions (includes all matches)
         const url = `${APPS_SCRIPT_URL}?path=Predictions&action=read`;
         const response = await fetch(url);
         const allPredictions = await response.json();
         
-        console.log("All predictions:", allPredictions.length);
-        
         const userPreds = allPredictions.filter(pred => pred.player_name === playerName);
-        
-        console.log("User predictions:", userPreds.length);
         
         userPreds.forEach(pred => {
           const match = matchesData.find(m => m.MatchID === pred.match_id);
           
-          // Fetch for ALL matches (no "Over" check)
           if (match) {
             const existing = userPredictions[pred.match_id];
             const timestamp = pred.timestamp || "";
@@ -329,16 +309,9 @@
           }
         });
         
-        console.log("Final user predictions:", Object.keys(userPredictions).length);
-        
-        // STEP 2: Fetch ALL scores for player (single API call)
-        console.log("Fetching all scores for player:", playerName);
-        
         const scoresUrl = `${APPS_SCRIPT_URL}?path=MatchScore&action=getAllScores&playerName=${playerName}`;
         const scoresResponse = await fetch(scoresUrl);
         const allScores = await scoresResponse.json();
-        
-        console.log("All scores fetched:", allScores);
         matchScores = allScores;
         
       } catch (error) {
@@ -346,19 +319,15 @@
       }
     }
 
-    // Initialize app
     async function initializeApp() {
       await fetchPlayers();
       await fetchMatches();
       document.getElementById("loading").style.display = "none";
     }
 
-    // Auto-update winner based on score predictions
     function updateWinnerBasedOnScore(homeInput, awayInput, winnerSelect, homeTeam, awayTeam) {
       const home = parseInt(homeInput.value) || 0;
       const away = parseInt(awayInput.value) || 0;
-      
-      console.log("Updating winner: Home=", home, "Away=", away);
       
       if (home > away) {
         winnerSelect.value = homeTeam;
@@ -374,22 +343,15 @@
       }
     }
 
-    // Save/update prediction (uses UPDATE instead of DELETE + WRITE)
     async function savePrediction(matchId, homePred, awayPred, doubling, winner, homeTeam, awayTeam) {
       const timestamp = new Date().toISOString();
       
       try {
         const existingPred = userPredictions[matchId];
         
-        console.log("=== Starting savePrediction ===");
-        console.log("matchId:", matchId);
-        
-        // Auto-calculate winner for MatchID <= 72
         if (matchId <= 72) {
           const home = parseInt(homePred) || 0;
           const away = parseInt(awayPred) || 0;
-          
-          console.log("MatchID <= 72: Auto-calculating winner");
           
           if (home > away) {
             winner = homeTeam;
@@ -400,26 +362,16 @@
           }
         }
         
-        // Calculate results_stage in index.html
         let resultsStage;
         if (matchId < 73) {
           resultsStage = "NA";
-          console.log("results_stage: NA (MatchID < 73)");
         } else {
           const home = parseInt(homePred) || 0;
           const away = parseInt(awayPred) || 0;
-          
-          if (home === away) {
-            resultsStage = "Penalty";
-            console.log("results_stage: Penalty (Draw)");
-          } else {
-            resultsStage = "Full Time";
-            console.log("results_stage: Full Time (Not draw)");
-          }
+          resultsStage = (home === away) ? "Penalty" : "Full Time";
         }
         
-        // NEW: Use UPDATE instead of DELETE + WRITE (1 API call instead of 2)
-        //if (existingPred && existingPred.id) {
+        // NEW: Use UPDATE instead of DELETE + WRITE (1 API call)
         if (existingPred) {
           console.log("Updating existing prediction for MatchID:", matchId);
           
@@ -427,88 +379,86 @@
           
           const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}&results_pred=${winner}&results_stage=${resultsStage}`;
           
-          console.log("Update body:", body);
-          
           const updateResponse = await fetch(updateUrl, {
             method: 'POST',
             body: body
           });
           
-          try {
-            const updateResult = await updateResponse.json();
+          const updateResult = await updateResponse.json();
+          
+          if (updateResult.success) {
+            console.log("✓ Row updated successfully");
             
-            if (updateResult.success) {
-              console.log("✓ Row updated successfully");
+            userPredictions[matchId] = {
+              homePred: homePred,
+              awayPred: awayPred,
+              doubling: doubling,
+              resultsPred: winner,
+              resultsStage: resultsStage,
+              timestamp: timestamp,
+              id: existingPred.id
+            };
+            
+            return true;
+          } else {
+            console.error("✗ Failed to update row:", updateResult.error);
+            
+            // Show detailed error message
+            if (updateResult.searchingFor) {
+              console.error("Searching for:", updateResult.searchingFor);
+              console.error("Found rows for player:", updateResult.foundRowsForPlayer);
               
-              userPredictions[matchId] = {
-                homePred: homePred,
-                awayPred: awayPred,
-                doubling: doubling,
-                resultsPred: winner,
-                resultsStage: resultsStage,
-                timestamp: timestamp,
-                id: existingPred.id  // Keep same ID
-              };
+              let errorMsg = "❌ Error: Row not found
+
+";
+              errorMsg += "Searching for: " + updateResult.searchingFor.player_name + " | Match " + updateResult.searchingFor.match_id + "
+
+";
               
-              return true;
-            } else {
-             console.error("✗ Failed to update row:", updateResult.error);
-  
-             // Show detailed error message
-             if (updateResult.searchingFor) {
-               console.error("Searching for:", updateResult.searchingFor);
-               console.error("Found rows for player:", updateResult.foundRowsForPlayer);
-    
-               alert("❌ Error: Row not found "            +
-                     "Searching for: " + updateResult.searchingFor.player_name + " | Match " + updateResult.searchingFor.match_id + " " +
-          "Found " + updateResult.foundRowsForPlayer.length + " rows for this player: " +
-          updateResult.foundRowsForPlayer.map(r => "  Row " + r.row + ": Match " + r.match_id + " (" + r.home_pred + "-" + r.away_pred + ")").join(" "));
-             }
-  
-             return false;
+              if (updateResult.foundRowsForPlayer.length > 0) {
+                errorMsg += "Found " + updateResult.foundRowsForPlayer.length + " rows for this player:
+";
+                errorMsg += updateResult.foundRowsForPlayer.map(r => "  Row " + r.row + ": Match " + r.match_id + " (" + r.home_pred + "-" + r.away_pred + ")").join("
+");
+              } else {
+                errorMsg += "No rows found for this player.";
+              }
+              
+              alert(errorMsg);
             }
-          } catch (e) {
-            console.error("Error parsing update response:", e);
+            
             return false;
           }
         } else {
-          // NEW: Write new row only if no existing prediction
           console.log("Creating new prediction for MatchID:", matchId);
           
           const writeUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=write`;
           
           const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}&results_pred=${winner}&results_stage=${resultsStage}`;
           
-          console.log("Write body:", body);
-          
           const writeResponse = await fetch(writeUrl, {
             method: 'POST',
             body: body
           });
           
-          try {
-            const writeResult = await writeResponse.json();
+          const writeResult = await writeResponse.json();
+          
+          if (writeResult.success) {
+            console.log("✓ New row written successfully");
             
-            if (writeResult.success) {
-              console.log("✓ New row written successfully");
-              
-              userPredictions[matchId] = {
-                homePred: homePred,
-                awayPred: awayPred,
-                doubling: doubling,
-                resultsPred: winner,
-                resultsStage: resultsStage,
-                timestamp: timestamp,
-                id: writeResult.id
-              };
-              
-              return true;
-            } else {
-              console.error("✗ Failed to write new row:", writeResult.error || writeResult.message);
-              return false;
-            }
-          } catch (e) {
-            console.error("Error parsing write response:", e);
+            userPredictions[matchId] = {
+              homePred: homePred,
+              awayPred: awayPred,
+              doubling: doubling,
+              resultsPred: winner,
+              resultsStage: resultsStage,
+              timestamp: timestamp,
+              id: writeResult.id
+            };
+            
+            return true;
+          } else {
+            console.error("✗ Failed to write new row:", writeResult.error);
             return false;
           }
         }
@@ -564,7 +514,6 @@
         info.className = "match-info";
         info.textContent = m.Date;
 
-        // Display match score (always show, 2 decimals)
         const scoreDiv = document.createElement("div");
         scoreDiv.className = "score-display";
         scoreDiv.textContent = `⭐ Your Score: ${matchScore.toFixed(2)} points`;
@@ -634,7 +583,6 @@
         goalsDiv.appendChild(goalsLabel);
         goalsDiv.appendChild(goalInputs);
 
-        // Winner section (MatchID 73+)
         if (needsWinner) {
           const winnerDiv = document.createElement("div");
           const winnerLabel = document.createElement("div");
@@ -765,7 +713,7 @@
           }
 
           if (matchStatus === "Over") {
-            alert("⚠️ This match is Over. You cannot submit or update predictions.");
+            alert("⚠️ This match is Over.");
             return;
           }
 
@@ -819,8 +767,6 @@
             
             div.classList.remove("match-cutoff");
             div.classList.add("match-predicted");
-            
-            console.log("Prediction saved successfully");
           } else {
             const msg = document.createElement("div");
             msg.className = "error";
@@ -840,8 +786,6 @@
 
         container.appendChild(div);
       });
-
-      console.log("Matches rendered successfully");
     }
 
     document.getElementById("setPlayerBtn").onclick = async () => {
