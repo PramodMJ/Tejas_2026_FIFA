@@ -165,6 +165,17 @@
       padding: 12px;
       font-size: 14px;
     }
+    .score-display {
+      background: #e3f2fd;
+      padding: 8px;
+      border-radius: 6px;
+      margin: 8px 0;
+      font-size: 13px;
+      color: #1976d2;
+    }
+    .winner-section {
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
@@ -206,8 +217,9 @@
     let matchesData = [];
     let playersData = [];
     let userPredictions = {};
+    let matchScores = {}; // Store scores: {matchId: score}
 
-    // Check if current time is between 8PM and 12AM IST
+    // Check if current time is between 10PM and 12AM IST
     function isCutoffTime() {
       const now = new Date();
       const utc = now.getTime() + (now.getTimezoneOffset() * 60000);
@@ -279,9 +291,26 @@
       }
     }
 
+    // NEW: Fetch match score for current player from MatchScore sheet
+    async function fetchMatchScore(matchId, playerName) {
+      try {
+        const url = `${APPS_SCRIPT_URL}?path=MatchScore&action=getMatchScore&matchId=${matchId}&playerName=${playerName}`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        console.log(`Score for MatchID ${matchId}, Player ${playerName}:`, data.score);
+        
+        return data.score || 0;
+      } catch (error) {
+        console.error(`Error fetching score for MatchID ${matchId}:`, error);
+        return 0;
+      }
+    }
+
     // Fetch user's existing predictions from Apps Script
     async function fetchUserPredictions() {
       userPredictions = {};
+      matchScores = {};
       
       try {
         const url = `${APPS_SCRIPT_URL}?path=Predictions&action=read`;
@@ -297,8 +326,8 @@
         userPreds.forEach(pred => {
           const match = matchesData.find(m => m.MatchID === pred.match_id);
           
-         // if (match && getMatchStatus(match) !== "Over") {
-          if (match) {
+//          if (match && getMatchStatus(match) !== "Over") {
+          if(match)
             const existing = userPredictions[pred.match_id];
             const timestamp = pred.timestamp || "";
             
@@ -307,6 +336,7 @@
                 homePred: pred.home_pred,
                 awayPred: pred.away_pred,
                 doubling: pred.doubling,
+                resultsPred: pred.results_pred || '', // NEW: Store winner
                 timestamp: timestamp,
                 id: pred.ID
               };
@@ -315,6 +345,15 @@
         });
         
         console.log("Final user predictions:", Object.keys(userPredictions).length);
+        
+        // Fetch scores for all matches for current player
+        console.log("Fetching match scores for player:", playerName);
+        for (const match of matchesData) {
+          const score = await fetchMatchScore(match.MatchID, playerName);
+          matchScores[match.MatchID] = score;
+        }
+        console.log("All match scores loaded:", matchScores);
+        
       } catch (error) {
         console.error("Error fetching predictions:", error);
       }
@@ -327,8 +366,35 @@
       document.getElementById("loading").style.display = "none";
     }
 
+    // NEW: Auto-update winner based on score predictions
+    function updateWinnerBasedOnScore(homeInput, awayInput, winnerSelect, homeTeam, awayTeam) {
+      const home = parseInt(homeInput.value) || 0;
+      const away = parseInt(awayInput.value) || 0;
+      
+      console.log("Updating winner: Home=", home, "Away=", away);
+      
+      if (home > away) {
+        winnerSelect.value = homeTeam;
+        winnerSelect.disabled = true;
+        winnerSelect.classList.add("over");
+      } else if (away > home) {
+        winnerSelect.value = awayTeam;
+        winnerSelect.disabled = true;
+        winnerSelect.classList.add("over");
+      } else {
+        // Draw - make editable
+        winnerSelect.disabled = false;
+        winnerSelect.classList.remove("over");
+        // Keep previous selection or clear if none
+        if (!winnerSelect.value || winnerSelect.value === homeTeam || winnerSelect.value === awayTeam) {
+          // Keep current value if it's valid
+        }
+      }
+    }
+
     // Save/update prediction using Apps Script (DELETE old + WRITE new)
-    async function savePrediction(matchId, homePred, awayPred, doubling) {
+    // NEW: Added homeTeam and awayTeam parameters for auto-calculation
+    async function savePrediction(matchId, homePred, awayPred, doubling, winner, homeTeam, awayTeam) {
       const timestamp = new Date().toISOString();
       
       try {
@@ -337,6 +403,28 @@
         console.log("=== Starting savePrediction ===");
         console.log("matchId:", matchId);
         console.log("existingPred:", existingPred);
+        
+        // NEW: Auto-calculate winner for MatchID <= 72
+        if (matchId <= 72) {
+          const home = parseInt(homePred) || 0;
+          const away = parseInt(awayPred) || 0;
+          
+          console.log("MatchID <= 72: Auto-calculating winner");
+          console.log("Home:", home, "Away:", away);
+          
+          if (home > away) {
+            winner = homeTeam;
+            console.log("Winner:", winner, "(Home team wins)");
+          } else if (away > home) {
+            winner = awayTeam;
+            console.log("Winner:", winner, "(Away team wins)");
+          } else {
+            winner = "Draw";
+            console.log("Winner:", winner, "(Draw)");
+          }
+        } else {
+          console.log("MatchID >= 73: Using user-selected winner:", winner);
+        }
         
         // STEP 1: If exists, DELETE old row
         if (existingPred && existingPred.id) {
@@ -367,13 +455,13 @@
           console.log("STEP 1: No existing prediction to delete");
         }
 
-        // STEP 2: WRITE new row
+        // STEP 2: WRITE new row (includes winner)
         console.log("STEP 2: Writing new prediction");
         
         const writeUrl = `${APPS_SCRIPT_URL}?path=Predictions&action=write`;
         console.log("Write URL:", writeUrl);
         
-        const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}`;
+        const body = `timestamp=${timestamp}&player_name=${playerName}&match_id=${matchId}&home_pred=${homePred}&away_pred=${awayPred}&doubling=${doubling}&results_pred=${winner}`;
         console.log("Request body:", body);
         
         const writeResponse = await fetch(writeUrl, {
@@ -394,6 +482,7 @@
               homePred: homePred,
               awayPred: awayPred,
               doubling: doubling,
+              resultsPred: winner,
               timestamp: timestamp,
               id: null
             };
@@ -441,6 +530,8 @@
       matchesData.forEach(m => {
         const matchStatus = getMatchStatus(m);
         const existingPred = userPredictions[m.MatchID];
+        const matchScore = matchScores[m.MatchID] || 0;
+        const needsWinner = m.MatchID >= 73; // NEW: Only for MatchID 73+
         
         const div = document.createElement("div");
         
@@ -465,6 +556,14 @@
         info.className = "match-info";
         info.textContent = m.Date;
 
+        // NEW: Display match score
+        if (matchScore > 0) {
+          const scoreDiv = document.createElement("div");
+          scoreDiv.className = "score-display";
+          scoreDiv.textContent = `⭐ Your Score: ${matchScore} points`;
+          div.appendChild(scoreDiv);
+        }
+
         const statusDiv = document.createElement("div");
         statusDiv.className = "match-status";
         
@@ -476,11 +575,11 @@
           statusDiv.innerHTML = `<span class="status-live">✓ Live</span> | Open for predictions`;
         }
 
-        // NEW: Show existing prediction even when match is Over
         if (existingPred) {
           const existingMsg = document.createElement("div");
           existingMsg.className = "existing-prediction";
-          existingMsg.textContent = `📋 Your prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}`;
+          let winnerText = existingPred.resultsPred ? ` | Winner: ${existingPred.resultsPred}` : '';
+          existingMsg.textContent = `📋 Your prediction: ${m.HomeTeam} ${existingPred.homePred} - ${existingPred.awayPred} ${m.AwayTeam} | Doubling: ${existingPred.doubling}${winnerText}`;
           div.appendChild(existingMsg);
         }
 
@@ -528,10 +627,62 @@
         goalsDiv.appendChild(goalsLabel);
         goalsDiv.appendChild(goalInputs);
 
+        // NEW: Winner section (MatchID 73+)
+        if (needsWinner) {
+          const winnerDiv = document.createElement("div");
+          const winnerLabel = document.createElement("div");
+          winnerLabel.className = "prediction-label";
+          winnerLabel.textContent = "2) Winner:";
+          
+          const winnerSection = document.createElement("div");
+          winnerSection.className = "winner-section";
+          
+          const winnerSelect = document.createElement("select");
+          winnerSelect.id = `winner-${m.MatchID}`;
+          
+          const optionHome = document.createElement("option");
+          optionHome.value = m.HomeTeam;
+          optionHome.textContent = m.HomeTeam;
+          
+          const optionAway = document.createElement("option");
+          optionAway.value = m.AwayTeam;
+          optionAway.textContent = m.AwayTeam;
+          
+          winnerSelect.appendChild(optionHome);
+          winnerSelect.appendChild(optionAway);
+          
+          // Set existing winner if available
+          if (existingPred && existingPred.resultsPred) {
+            winnerSelect.value = existingPred.resultsPred;
+            winnerSelect.classList.add("has-prediction");
+          }
+          
+          // NEW: Auto-update winner when scores change
+          homeInput.addEventListener('input', () => {
+            updateWinnerBasedOnScore(homeInput, awayInput, winnerSelect, m.HomeTeam, m.AwayTeam);
+          });
+          
+          awayInput.addEventListener('input', () => {
+            updateWinnerBasedOnScore(homeInput, awayInput, winnerSelect, m.HomeTeam, m.AwayTeam);
+          });
+          
+          // Set initial winner state
+          if (existingPred) {
+            updateWinnerBasedOnScore(homeInput, awayInput, winnerSelect, m.HomeTeam, m.AwayTeam);
+          }
+          
+          winnerSection.appendChild(winnerSelect);
+
+          winnerDiv.appendChild(winnerLabel);
+          winnerDiv.appendChild(winnerSection);
+
+          goalsDiv.appendChild(winnerDiv);
+        }
+
         const doublingDiv = document.createElement("div");
         const doublingLabel = document.createElement("div");
         doublingLabel.className = "prediction-label";
-        doublingLabel.textContent = "2) Doubling:";
+        doublingLabel.textContent = needsWinner ? "3) Doubling:" : "2) Doubling:";
         
         const doublingSection = document.createElement("div");
         doublingSection.className = "doubling-section";
@@ -568,6 +719,13 @@
           submitBtn.disabled = true;
           homeInput.disabled = true;
           awayInput.disabled = true;
+          if (needsWinner) {
+            const winnerSelect = document.getElementById(`winner-${m.MatchID}`);
+            if (winnerSelect) {
+              winnerSelect.disabled = true;
+              winnerSelect.classList.add("over");
+            }
+          }
           doublingSelect.disabled = true;
           homeInput.classList.add("over");
           awayInput.classList.add("over");
@@ -577,6 +735,13 @@
           submitBtn.disabled = true;
           homeInput.disabled = true;
           awayInput.disabled = true;
+          if (needsWinner) {
+            const winnerSelect = document.getElementById(`winner-${m.MatchID}`);
+            if (winnerSelect) {
+              winnerSelect.disabled = true;
+              winnerSelect.classList.add("over");
+            }
+          }
           doublingSelect.disabled = true;
         } else {
           submitBtn.textContent = existingPred ? "Update Prediction" : "Submit Prediction";
@@ -586,6 +751,15 @@
           const homePred = homeInput.value;
           const awayPred = awayInput.value;
           const doubling = doublingSelect.value;
+          
+          // Get winner if needed
+          let winner = "";
+          if (needsWinner) {
+            const winnerSelect = document.getElementById(`winner-${m.MatchID}`);
+            if (winnerSelect) {
+              winner = winnerSelect.value;
+            }
+          }
 
           if (matchStatus === "Over") {
             alert("⚠️ This match is Over. You cannot submit or update predictions.");
@@ -597,19 +771,48 @@
             return;
           }
 
+          // NEW: Validate winner for MatchID 73+ (only if not draw)
+          if (needsWinner) {
+            const home = parseInt(homePred) || 0;
+            const away = parseInt(awayPred) || 0;
+            
+            // Only validate if scores are different (user can't select for draw)
+            if (home !== away && !winner) {
+              alert("Please select a winner.");
+              return;
+            }
+          }
+
           submitBtn.textContent = "Saving...";
           submitBtn.disabled = true;
 
-          const success = await savePrediction(m.MatchID, homePred, awayPred, doubling);
+          // NEW: Pass team names for auto-calculation (MatchID <= 72)
+          const success = await savePrediction(
+            m.MatchID, 
+            homePred, 
+            awayPred, 
+            doubling, 
+            winner,
+            m.HomeTeam,  // Pass home team name
+            m.AwayTeam   // Pass away team name
+          );
 
           if (success) {
             const msg = document.createElement("div");
             msg.className = "success";
-            msg.textContent = `✓ Prediction ${existingPred ? 'updated' : 'saved'}: ${m.HomeTeam} ${homePred} - ${awayPred} ${m.AwayTeam} | Doubling: ${doubling}`;
+            let winnerText = winner ? ` | Winner: ${winner}` : '';
+            msg.textContent = `✓ Prediction ${existingPred ? 'updated' : 'saved'}: ${m.HomeTeam} ${homePred} - ${awayPred} ${m.AwayTeam} | Doubling: ${doubling}${winnerText}`;
             div.appendChild(msg);
 
             homeInput.disabled = true;
             awayInput.disabled = true;
+            if (needsWinner) {
+              const winnerSelect = document.getElementById(`winner-${m.MatchID}`);
+              if (winnerSelect) {
+                winnerSelect.disabled = true;
+                winnerSelect.classList.add("over");
+              }
+            }
             doublingSelect.disabled = true;
             submitBtn.textContent = "Saved";
             
@@ -658,7 +861,7 @@
       const loadingDiv = document.createElement("div");
       loadingDiv.id = "loadingPredictions";
       loadingDiv.className = "loading-predictions";
-      loadingDiv.textContent = "Loading your existing predictions...";
+      loadingDiv.textContent = "Loading your existing predictions and scores...";
       document.getElementById("matchesSection").appendChild(loadingDiv);
       
       await fetchUserPredictions();
@@ -671,6 +874,7 @@
     document.getElementById("backBtn").onclick = () => {
       playerName = "";
       userPredictions = {};
+      matchScores = {};
       document.getElementById("userInfoSection").style.display = "none";
       document.getElementById("playerSection").style.display = "block";
       document.getElementById("matchesSection").innerHTML = "";
